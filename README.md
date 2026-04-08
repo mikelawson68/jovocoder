@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/jovocoder-source.png" alt="JovoCoder Logo" width="600"/>
+  <img src="docs/jovocoder-source.png" alt="JovoCoder Logo" width="300"/>
 </p>
 
 # JovoCoder
