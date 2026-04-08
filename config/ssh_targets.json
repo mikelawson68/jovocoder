@@ -1,0 +1,20 @@
+{
+  "targets": {
+    "test.artistpro.media": {
+      "host": "test.artistpro.media",
+      "user": "critic",
+      "port": 22,
+      "safe": true,
+      "environment": "test",
+      "notes": "Safe target for read-only audits and controlled development checks."
+    },
+    "artistprocodecritic-lan": {
+      "host": "192.168.1.52",
+      "user": "critic",
+      "port": 22,
+      "safe": true,
+      "environment": "local",
+      "notes": "Local LAN access for JovoCoder development."
+    }
+  }
+}
