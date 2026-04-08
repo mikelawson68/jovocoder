@@ -1,0 +1,515 @@
+#!/usr/bin/env bash
+# JovoCoder — built on top of MemPalace
+# Memory backend attribution: MemPalace by Milla Jovovich and contributors
+set -euo pipefail
+
+HISTORY_FILE="/home/critic/.mempalace/mp-agent-history.txt"
+TASKS_FILE="/home/critic/.mempalace/mp-agent-tasks.jsonl"
+MEMORY_FILE="/home/critic/.mempalace/mp-agent-memory.log"
+LAST_RESPONSE_FILE="/tmp/jovocoder-last-response.txt"
+
+touch "$HISTORY_FILE" "$TASKS_FILE" "$MEMORY_FILE"
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || { echo "missing $1"; exit 1; }
+}
+
+require_cmd mempalace
+require_cmd ollama
+require_cmd python3
+
+classify_role() {
+  local task="$1"
+  local lower
+  lower="$(echo "$task" | tr '[:upper:]' '[:lower:]')"
+
+  if echo "$lower" | grep -E -q 'validate|check|verify|safe|risk|canon|production|test first'; then
+    echo "validator"
+  elif echo "$lower" | grep -E -q 'php|code|function|class|refactor|bug|fix|sql|query|implement|write'; then
+    echo "coder"
+  else
+    echo "planner"
+  fi
+}
+
+model_for_role() {
+  case "$1" in
+    planner) echo "llama3.1:8b" ;;
+    coder) echo "codellama:13b-instruct" ;;
+    validator) echo "gemma4:26b" ;;
+  esac
+}
+
+system_prompt_for_role() {
+  case "$1" in
+    planner)
+      cat <<'EOP'
+You are the planner agent.
+Break work into safe, minimal, verifiable steps.
+Prioritize next actions.
+EOP
+      ;;
+    coder)
+      cat <<'EOP'
+You are the coder agent.
+Provide concrete, minimal, safe implementation steps.
+Do not invent files or paths not present in memory.
+Prefer minimal changes over rewrites.
+EOP
+      ;;
+    validator)
+      cat <<'EOP'
+You are the validator agent.
+Enforce canon, safety, production boundaries, and data integrity.
+Reject vague or risky actions.
+Prefer caution over speed.
+EOP
+      ;;
+  esac
+}
+
+add_task() {
+  python3 - "$TASKS_FILE" "$1" <<'PY2'
+import json, sys, datetime, pathlib
+path = pathlib.Path(sys.argv[1])
+text = sys.argv[2]
+task = {
+    "id": int(datetime.datetime.now().timestamp()),
+    "status": "open",
+    "text": text,
+    "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+}
+with path.open("a") as f:
+    f.write(json.dumps(task) + "\n")
+print(f'added task #{task["id"]}: {task["text"]}')
+PY2
+}
+
+list_tasks() {
+  python3 - "$TASKS_FILE" <<'PY2'
+import json, sys, pathlib
+path = pathlib.Path(sys.argv[1])
+rows = []
+if path.exists():
+    for line in path.read_text().splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+open_rows = [r for r in rows if r.get("status") == "open"]
+done_rows = [r for r in rows if r.get("status") == "done"]
+print("OPEN TASKS")
+if open_rows:
+    for r in open_rows:
+        print(f'  #{r["id"]}  {r["text"]}')
+else:
+    print("  (none)")
+print("")
+print("DONE TASKS")
+if done_rows:
+    for r in done_rows[-10:]:
+        print(f'  #{r["id"]}  {r["text"]}')
+else:
+    print("  (none)")
+PY2
+}
+
+done_task() {
+  python3 - "$TASKS_FILE" "$1" <<'PY2'
+import json, sys, pathlib
+path = pathlib.Path(sys.argv[1])
+target = int(sys.argv[2])
+rows = []
+found = False
+for line in path.read_text().splitlines():
+    if not line.strip():
+        continue
+    row = json.loads(line)
+    if row.get("id") == target:
+        row["status"] = "done"
+        found = True
+    rows.append(row)
+path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+print(f"marked task #{target} done" if found else f"task #{target} not found")
+PY2
+}
+
+render_open_tasks() {
+  python3 - "$TASKS_FILE" <<'PY2'
+import json, sys, pathlib
+path = pathlib.Path(sys.argv[1])
+rows = []
+if path.exists():
+    for line in path.read_text().splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+open_rows = [r for r in rows if r.get("status") == "open"]
+if not open_rows:
+    print("(none)")
+else:
+    for r in open_rows[-10:]:
+        print(f'#{r["id"]}: {r["text"]}')
+PY2
+}
+
+remember_note() {
+  python3 - "$MEMORY_FILE" "$1" <<'PY2'
+import sys, pathlib, datetime
+path = pathlib.Path(sys.argv[1])
+text = sys.argv[2]
+stamp = datetime.datetime.now().isoformat(timespec="seconds")
+with path.open("a") as f:
+    f.write(f"[{stamp}] {text}\n")
+print(f"remembered: {text}")
+PY2
+}
+
+show_memory() {
+  echo "RECENT MEMORY"
+  tail -n 20 "$MEMORY_FILE" 2>/dev/null || true
+}
+
+resume_state() {
+  echo "=== RESUME STATE ==="
+  echo
+  echo "OPEN TASKS"
+  render_open_tasks
+  echo
+  echo "RECENT MEMORY"
+  tail -n 10 "$MEMORY_FILE" 2>/dev/null || true
+  echo
+  echo "RECENT CONTEXT"
+  tail -n 20 "$HISTORY_FILE" 2>/dev/null || true
+  echo
+}
+
+build_context() {
+  local task="$1"
+  {
+    echo "## IDENTITY"
+    [ -f /home/critic/.mempalace/identity.txt ] && cat /home/critic/.mempalace/identity.txt
+    echo
+    echo "## OPEN TASKS"
+    render_open_tasks
+    echo
+    echo "## MEMORY"
+    tail -n 10 "$MEMORY_FILE" 2>/dev/null || true
+    echo
+    echo "## CONTEXT"
+    tail -n 20 "$HISTORY_FILE" 2>/dev/null || true
+    echo
+    echo "## LONG-TERM"
+    mempalace search "$task" 2>/dev/null || true
+  }
+}
+
+run_single_agent() {
+  local task="$1"
+  local role model tmp_ctx tmp_prompt
+
+  role="$(classify_role "$task")"
+  model="$(model_for_role "$role")"
+
+  echo "[agent → $role | $model]"
+
+  tmp_ctx="$(mktemp /tmp/jovocoder-ctx.XXXXXX.txt)"
+  tmp_prompt="$(mktemp /tmp/jovocoder-prompt.XXXXXX.txt)"
+
+  build_context "$task" > "$tmp_ctx"
+
+  cat > "$tmp_prompt" <<EOP
+$(system_prompt_for_role "$role")
+
+Use memory, tasks, canon, and recent context to guide your answer.
+Be concise, actionable, and safe.
+Do not hallucinate.
+Do not invent files, paths, or steps not supported by memory.
+
+=== MEMORY ===
+$(cat "$tmp_ctx")
+
+=== TASK ===
+$task
+EOP
+
+  echo
+  ollama run "$model" < "$tmp_prompt" | tee "$LAST_RESPONSE_FILE"
+  echo
+
+  {
+    echo "USER: $task"
+    echo "ROLE: $role"
+    echo "AI:"
+    cat "$LAST_RESPONSE_FILE"
+    echo
+  } >> "$HISTORY_FILE"
+
+  rm -f "$tmp_ctx" "$tmp_prompt"
+}
+
+run_model() {
+  local model="$1"
+  local prompt_file
+  prompt_file="$(mktemp /tmp/jovocoder-loop-prompt.XXXXXX.txt)"
+  cat > "$prompt_file"
+  ollama run "$model" < "$prompt_file"
+  rm -f "$prompt_file"
+}
+
+loop_refine() {
+  local user_task="$1"
+  local max_rounds="${2:-3}"
+  local round=1
+  local planner_out=""
+  local coder_out=""
+  local validator_out=""
+  local context=""
+
+  context="$(build_context "$user_task")"
+
+  while [ "$round" -le "$max_rounds" ]; do
+    echo
+    echo "===== ROUND $round / $max_rounds ====="
+    echo
+
+    echo "[planner → llama3.1:8b]"
+    planner_out="$(
+      cat <<EOP | run_model "llama3.1:8b"
+You are the planner agent.
+Break the task into safe, minimal, verifiable steps.
+Respect canon, production boundaries, and test-first workflow.
+Do not propose risky changes without flagging them.
+
+=== CONTEXT ===
+$context
+
+=== USER TASK ===
+$user_task
+
+Return:
+1. Goal
+2. Scope
+3. Atomic steps
+4. Verification
+5. Data impact
+EOP
+    )"
+    echo "$planner_out"
+    echo
+
+    echo "[coder → codellama:13b-instruct]"
+    coder_out="$(
+      cat <<EOP | run_model "codellama:13b-instruct"
+You are the coder agent.
+Given the plan, produce the safest implementation candidate.
+Use minimal changes only.
+Do not invent files or paths not supported by context.
+Do not claim success.
+If code cannot be safely proposed from available context, say so.
+
+=== CONTEXT ===
+$context
+
+=== USER TASK ===
+$user_task
+
+=== PLAN ===
+$planner_out
+
+Return:
+1. Proposed implementation candidate
+2. Exact affected area if known
+3. Risks
+4. Verification commands or checks
+EOP
+    )"
+    echo "$coder_out"
+    echo
+
+    echo "[validator → gemma4:26b]"
+    validator_out="$(
+      cat <<EOP | run_model "gemma4:26b"
+You are the validator agent.
+Enforce canon, safety, production boundaries, and data integrity.
+Reject vague, risky, unverifiable, or production-touching proposals.
+If acceptable, start with PASS.
+If revision needed, start with REVISE.
+If impossible to proceed safely, start with STOP.
+
+=== CONTEXT ===
+$context
+
+=== USER TASK ===
+$user_task
+
+=== PLAN ===
+$planner_out
+
+=== CANDIDATE ===
+$coder_out
+
+Return:
+- Decision: PASS / REVISE / STOP
+- Reasons
+- Required corrections if any
+EOP
+    )"
+    echo "$validator_out"
+    echo
+
+    if echo "$validator_out" | grep -q '^PASS'; then
+      {
+        echo "USER: /autoloop $user_task"
+        echo "ROLE: loop"
+        echo "AI:"
+        echo "FINAL VALIDATED CANDIDATE"
+        echo
+        echo "PLAN:"
+        echo "$planner_out"
+        echo
+        echo "CANDIDATE:"
+        echo "$coder_out"
+        echo
+        echo "VALIDATION:"
+        echo "$validator_out"
+        echo
+      } >> "$HISTORY_FILE"
+
+      echo "===== FINAL RESULT: PASS ====="
+      return 0
+    fi
+
+    if echo "$validator_out" | grep -q '^STOP'; then
+      {
+        echo "USER: /autoloop $user_task"
+        echo "ROLE: loop"
+        echo "AI:"
+        echo "LOOP STOPPED"
+        echo
+        echo "$validator_out"
+        echo
+      } >> "$HISTORY_FILE"
+
+      echo "===== FINAL RESULT: STOP ====="
+      return 1
+    fi
+
+    context="$context
+
+## PRIOR ROUND PLAN
+$planner_out
+
+## PRIOR ROUND CANDIDATE
+$coder_out
+
+## PRIOR ROUND VALIDATION
+$validator_out"
+    round=$((round+1))
+  done
+
+  {
+    echo "USER: /autoloop $user_task"
+    echo "ROLE: loop"
+    echo "AI:"
+    echo "MAX ROUNDS REACHED"
+    echo
+    echo "PLAN:"
+    echo "$planner_out"
+    echo
+    echo "CANDIDATE:"
+    echo "$coder_out"
+    echo
+    echo "VALIDATION:"
+    echo "$validator_out"
+    echo
+  } >> "$HISTORY_FILE"
+
+  echo "===== FINAL RESULT: MAX ROUNDS REACHED ====="
+  return 1
+}
+
+show_help() {
+  cat <<'EOP'
+JovoCoder
+built on top of MemPalace
+
+Commands:
+  /help
+  /add TASK
+  /tasks
+  /done ID
+  /remember NOTE
+  /memory
+  /resume
+  /handoff
+  /next
+  /autoloop TASK
+  exit
+EOP
+}
+
+echo ""
+echo " //> JovoCoder"
+echo " built on top of MemPalace"
+echo " type 'exit' to quit"
+echo " commands: /help /add /tasks /done /remember /memory /resume /handoff /next /autoloop"
+echo ""
+
+while true; do
+  printf "//> "
+  IFS= read -r TASK || break
+  [ "$TASK" = "exit" ] && break
+  [ -z "$TASK" ] && continue
+
+  case "$TASK" in
+    /help)
+      show_help
+      echo
+      continue
+      ;;
+    /add\ *)
+      add_task "${TASK#"/add "}"
+      echo
+      continue
+      ;;
+    /tasks)
+      list_tasks
+      echo
+      continue
+      ;;
+    /done\ *)
+      done_task "${TASK#"/done "}"
+      echo
+      continue
+      ;;
+    /remember\ *)
+      remember_note "${TASK#"/remember "}"
+      echo
+      continue
+      ;;
+    /memory)
+      show_memory
+      echo
+      continue
+      ;;
+    /resume)
+      resume_state
+      echo
+      continue
+      ;;
+    /handoff)
+      resume_state
+      echo
+      continue
+      ;;
+    /next)
+      run_single_agent "Given open tasks, saved memory, canon, and recent context, what is the single best next step?"
+      continue
+      ;;
+    /autoloop\ *)
+      loop_refine "${TASK#"/autoloop "}" 3
+      echo
+      continue
+      ;;
+  esac
+
+  run_single_agent "$TASK"
+done

@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# JovoCoder — built on top of MemPalace
+set -euo pipefail
+
+HISTORY="/home/critic/.mempalace/mp-agent-history.txt"
+TASKS="/home/critic/.mempalace/mp-agent-tasks.jsonl"
+MEMORY="/home/critic/.mempalace/mp-agent-memory.log"
+
+touch "$HISTORY" "$TASKS" "$MEMORY"
+
+role() {
+  t="$(echo "$1" | tr A-Z a-z)"
+  if echo "$t" | grep -qE 'validate|check|safe'; then echo validator
+  elif echo "$t" | grep -qE 'code|fix|php|sql'; then echo coder
+  else echo planner
+  fi
+}
+
+model() {
+  case "$1" in
+    planner) echo "llama3.1:8b" ;;
+    coder) echo "codellama:13b-instruct" ;;
+    validator) echo "gemma4:26b" ;;
+  esac
+}
+
+run() {
+  TASK="$1"
+  R="$(role "$TASK")"
+  M="$(model "$R")"
+
+  echo "[agent → $R | $M]"
+
+  TMP="$(mktemp)"
+
+  {
+    echo "## MEMORY"
+    tail -n 10 "$MEMORY" 2>/dev/null || true
+    echo
+    echo "## TASKS"
+    cat "$TASKS" 2>/dev/null || true
+    echo
+    echo "## CONTEXT"
+    mempalace search "$TASK" 2>/dev/null || true
+  } > "$TMP"
+
+  cat > /tmp/jovocoder-prompt.txt <<EOP
+You are a $R agent.
+
+Follow context strictly. Be concise.
+
+=== MEMORY ===
+$(cat "$TMP")
+
+=== TASK ===
+$TASK
+EOP
+
+  ollama run "$M" < /tmp/jovocoder-prompt.txt
+}
+
+echo "===== JovoCoder ====="
+echo "type 'exit' to quit"
+
+while true; do
+  printf "> "
+  read -r T || break
+  [ "$T" = "exit" ] && break
+  [ -z "$T" ] && continue
+
+  case "$T" in
+    /tasks) cat "$TASKS"; continue ;;
+    /memory) cat "$MEMORY"; continue ;;
+  esac
+
+  run "$T"
+done
