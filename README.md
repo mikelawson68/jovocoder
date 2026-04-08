@@ -13,7 +13,7 @@
 
 A local-first AI runtime that **doesn’t just remember — it works.**
 
-Built on top of MemPalace by Milla Jovovich & Ben Sigman. Their release of this gave me the breakthrough moment layer that I needed to create an open source completely free non-API required orchestra with full features and it's free. Thank you for the inspiration and breakthrough Ben and Milla. Get it here, you need it to run JovoCoder. https://github.com/milla-jovovich/mempalace
+Built on top of MemPalace by Milla Jovovich & Ben Sigman. Their release of this gave me the breakthrough moment layer that I needed to create an open source completely free non-API required orchestrator with full features and it's free. Thank you for the inspiration and breakthrough Ben and Milla. Get it here, you need it to run JovoCoder. https://github.com/milla-jovovich/mempalace
 
 ---
 
@@ -21,9 +21,7 @@ Built on top of MemPalace by Milla Jovovich & Ben Sigman. Their release of this 
 
 I didn’t set out to build another AI tool. In fact, had been fooling around with trying to build something like this for few weeks. I was stuck at the memory layer part of it, which is frankly one of the most important. Having to explain myself over and over again every time I went to work on this massive stack that I've developed for my publishing companies was very frustrating trying to control the drift. Explaining my project to the agent every time I started was absolutely maddening. And then I see MemPalace. It was a Eureka moment where I was able to go, "That's the missing part that I have not built."
 
-I installed MemPalace. Yeah that's pretty much. What did it.
-
-MemPalace gave me perfect recall.
+I installed MemPalace. MemPalace gave me perfect recall.
 
 What it didn’t give me was:
 
