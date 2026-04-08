@@ -3,137 +3,121 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/version-0.2.0-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/local--first-yes-brightgreen?style=for-the-badge" />
   <img src="https://img.shields.io/badge/no%20api-required-blueviolet?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/execution-engine-orange?style=for-the-badge" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" />
 </p>
 
 # JovoCoder
 
-A local-first AI runtime that **doesn’t just remember — it works.**
+A local-first AI execution engine that **doesn’t just remember — it acts.**
 
-Built on top of MemPalace by Milla Jovovich & Ben Sigman. Their release of this gave me the breakthrough moment layer that I needed to create an open source completely non-API required orchestrator with full features and it's free. Thank you for the inspiration and breakthrough Ben and Milla. Get it here, you need it to run JovoCoder. https://github.com/milla-jovovich/mempalace
+Built on top of MemPalace by Milla Jovovich & Ben Sigman, JovoCoder turns memory into a **safe, controlled, real-world operator system**.
 
 ---
 
 ## The Breakthrough
 
-I didn’t set out to build another AI tool. In fact, I had been fooling around with trying to build something like this for a few weeks. I was stuck at the memory layer, which is frankly one of the most important parts. Having to explain myself over and over again every time I went to work on this massive stack that I've developed for my publishing companies was extremely frustrating.
+MemPalace solved memory.
 
-Then I found MemPalace.
+JovoCoder solves what comes next:
 
-It was a Eureka moment.
+What do you *do* with perfect recall?
 
-MemPalace gave me perfect recall.
+Memory without execution is still friction.
 
-What it didn’t give me was:
+What was missing:
+- controlled execution  
+- safe command loops  
+- validation before action  
+- real-world system interaction  
 
-- a way to act on that memory  
-- a way to enforce rules  
-- a way to keep work moving forward without resetting  
-
-So I built the missing layer on top of it and connected it to my fully local Ollama stack.
-
----
-
-## The Problem
-
-You finally get an AI to understand your system.
-
-Then it forgets.
-
-It ignores rules.  
-It drifts.  
-It breaks things.  
-It restores things it shouldn’t.  
-It goes off on its own.
-
-And when it gets far enough off track, you have no choice but to start over.
-
-Every. Single. Time.
+JovoCoder is that missing layer.
 
 ---
 
-Even worse:
+## The Real Problem
 
-- You repeat the same instructions constantly  
-- You fight hallucinated “success”  
-- You lose debugging context  
-- You pay for tokens just to re-explain your own system  
+Modern AI tools:
+- forget context  
+- hallucinate success  
+- ignore constraints  
+- break production systems  
+- force you to repeat yourself endlessly  
 
----
+You don’t just lose time.
 
-## MemPalace Solves Memory
-
-MemPalace is the first system that actually fixed memory issues enough to make this possible:
-
-- stores everything  
-- retrieves intelligently  
-- runs locally  
-- no API required  
-
-It is the foundation.
+You lose control.
 
 ---
 
-## The Missing Layer
+## What JovoCoder Actually Is
 
-Memory alone is not enough.
+JovoCoder is not a chatbot.
 
-You still need:
+It is:
 
-- execution  
-- workflow  
-- control  
+TASK → planner → validator → execution → output → interpretation → repeat
 
-That’s what JovoCoder adds.
+A closed-loop system that:
 
----
-
-## JovoCoder
-
-JovoCoder turns memory into action.
-
-It adds:
-
-- agent roles (planner / coder / validator)  
-- persistent task tracking  
-- memory write-back  
-- safe refinement loops  
-- a real working CLI  
+- executes real commands  
+- validates before running anything  
+- operates on real infrastructure  
+- produces verifiable results  
 
 ---
 
-## What This Changes
+## What It Does
 
-Instead of:
+- Executes local and remote commands safely  
+- Runs SSH-based audits automatically  
+- Validates commands before execution  
+- Detects real system state (Apache, nginx, PHP, etc.)  
+- Produces structured audit summaries  
+- Writes lessons learned for future runs  
+- Operates entirely local-first (no APIs required)  
 
-prompt → guess → forget
+---
 
-You now have:
+## Example
 
-memory → retrieval → reasoning → validation → continuity
+/exec-task audit test.artistpro.media for apache and php health
+
+Output:
+
+AUDIT SUMMARY:  
+Target: test.artistpro.media  
+Host: dreamy-hermann...  
+Web: apache  
+Web Version: 2.4.52  
+PHP: 8.1.2  
+HTTP: 200  
+Status: PASS  
 
 ---
 
 ## How It Works
 
 MemPalace → memory + retrieval  
-JovoCoder → orchestration + workflow  
-Ollama → local model execution  
+JovoCoder → execution + validation loop  
+Ollama → local model runtime  
 
 ---
 
 ## Features
 
 - Local-first (no cloud required)  
-- Zero API by default  
-- Persistent memory and tasks  
-- Verifiable workflows  
-- No hallucinated success  
-- Multi-role reasoning (planner / coder / validator)  
-- CLI-based agent runtime  
+- Zero API usage  
+- Deterministic execution  
+- SSH automation with key auth  
+- Command validation (safety gating)  
+- Web server detection (Apache / nginx)  
+- Multi-target auditing  
+- Explain mode (plan without execution)  
+- Lessons learned write-back  
 
 ---
 
@@ -142,35 +126,45 @@ Ollama → local model execution
 ```bash
 bash scripts/install.sh
 bash scripts/verify.sh
+```
 
 ---
 
 ## Run
 
-jovocoder  
+```bash
+jovocoder
+```
 
 ---
 
-/help
-/add TASK
-/tasks
-/done ID
-/remember NOTE
-/memory
-/resume
-/handoff
-/next
-/autoloop TASK
-/exec
+## Core Commands
+
+```
+/exec <command>
 /audit
-/ssh-audit
-/exec-task
+/ssh-audit <target>
+/exec-task <task>
+/exec-task explain <task>
+```
 
 ---
 
-Optional: Auto-Launch on SSH Login
+## Execution Philosophy
 
-If you want JovoCoder to start automatically when you SSH into a system:
+- One command at a time  
+- Read-only by default  
+- No production writes  
+- No destructive operations  
+- Stop on mismatch  
+- Validate before execution  
+- Never hallucinate success  
+
+---
+
+## Optional: Auto-Launch on SSH Login
+
+```bash
 echo '
 # auto-start jovocoder for interactive ssh
 if [[ $- == *i* ]]; then
@@ -180,25 +174,13 @@ if [[ $- == *i* ]]; then
   fi
 fi
 ' >> ~/.bashrc
+```
 
-To bypass auto-launch and get a normal shell:
+To bypass auto-launch:
+
+```bash
 ssh -t user@host "bash --noprofile --norc"
----
-
-## Models
-
-Default role mapping:
-	•	Planner → llama3.1:8b
-	•	Coder → codellama:13b-instruct
-	•	Validator → gemma4:26b
----
-
-## Philosophy
-	•	Local-first
-	•	Deterministic behavior
-	•	Explicit memory
-	•	Controlled execution
-	•	No hallucinated success 
+```
 
 ---
 
@@ -206,13 +188,149 @@ Default role mapping:
 
 JovoCoder is built on top of MemPalace.
 
-MemPalace was created by Milla Jovovich & Ben Sigman and is used here as the memory and retrieval layer.
+MemPalace was created by Milla Jovovich & Ben Sigman and provides the memory layer.
 
-This project does not modify MemPalace itself — it adds an orchestration and execution layer on top of it.
+JovoCoder adds execution, validation, and orchestration.
 
-MemPalace is used in accordance with its open source license.
 ---
 
 ## Status
 
-v0.1.0 — Initial public release
+v0.2.0 — Execution Engine Release
+
+This is the version where JovoCoder stops being an assistant  
+and becomes an operator.- operates on real infrastructure  
+- produces verifiable results  
+
+---
+
+## What It Does
+
+- Executes local and remote commands safely  
+- Runs SSH-based audits automatically  
+- Validates commands before execution  
+- Detects real system state (Apache, nginx, PHP, etc.)  
+- Produces structured audit summaries  
+- Writes lessons learned for future runs  
+- Operates entirely local-first (no APIs required)  
+
+---
+
+## Example
+
+/exec-task audit test.artistpro.media for apache and php health
+
+Output:
+
+AUDIT SUMMARY:
+Target: test.artistpro.media  
+Host: dreamy-hermann...  
+Web: apache  
+Web Version: 2.4.52  
+PHP: 8.1.2  
+HTTP: 200  
+Status: PASS  
+
+---
+
+## How It Works
+
+MemPalace → memory + retrieval  
+JovoCoder → execution + validation loop  
+Ollama → local model runtime  
+
+---
+
+## Features
+
+- Local-first (no cloud required)  
+- Zero API usage  
+- Deterministic execution  
+- SSH automation with key auth  
+- Command validation (safety gating)  
+- Web server detection (Apache / nginx)  
+- Multi-target auditing  
+- Explain mode (plan without execution)  
+- Lessons learned write-back  
+
+---
+
+## Install
+
+```bash
+bash scripts/install.sh
+bash scripts/verify.sh
+```
+
+---
+
+## Run
+
+```bash
+jovocoder
+```
+
+---
+
+## Core Commands
+
+```
+/exec <command>
+/audit
+/ssh-audit <target>
+/exec-task <task>
+/exec-task explain <task>
+```
+
+---
+
+## Execution Philosophy
+
+- One command at a time  
+- Read-only by default  
+- No production writes  
+- No destructive operations  
+- Stop on mismatch  
+- Validate before execution  
+- Never hallucinate success  
+
+---
+
+## Optional: Auto-Launch on SSH Login
+
+```bash
+echo '
+# auto-start jovocoder for interactive ssh
+if [[ $- == *i* ]]; then
+  if command -v jovocoder >/dev/null 2>&1; then
+    jovocoder
+    exit
+  fi
+fi
+' >> ~/.bashrc
+```
+
+To bypass auto-launch:
+
+```bash
+ssh -t user@host "bash --noprofile --norc"
+```
+
+---
+
+## Attribution
+
+JovoCoder is built on top of MemPalace.
+
+MemPalace was created by Milla Jovovich & Ben Sigman and provides the memory layer.
+
+JovoCoder adds execution, validation, and orchestration.
+
+---
+
+## Status
+
+v0.2.0 — Execution Engine Release
+
+This is the version where JovoCoder stops being an assistant  
+and becomes an operator.
