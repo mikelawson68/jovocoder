@@ -3,9 +3,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-blue" />
-  <img src="https://img.shields.io/badge/local--first-yes-brightgreen" />
-  <img src="https://img.shields.io/badge/no%20api-required-blueviolet" alt="no api required" />
+  <img src="https://img.shields.io/badge/version-0.1.0-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/local--first-yes-brightgreen?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/no%20api-required-blueviolet?style=for-the-badge" />
+</p>
   <img src="https://img.shields.io/badge/license-MIT-success.svg" />
 </p>
 
