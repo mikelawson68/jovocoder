@@ -1,22 +1,20 @@
-![JovoCoder Logo](docs/jovocoder-source.png)
+<p align="center">
+  <img src="docs/jovocoder-source.png" alt="JovoCoder Logo" width="600"/>
+</p>
 
 # JovoCoder
 
 A local-first AI runtime that **doesn’t just remember — it works.**
 
-Built on top of MemPalace.
+Built on top of MemPalace by Milla Jovovich & Ben Sigman. Their release of this gave me the breakthrough moment layer that I needed to create an open source completely free non-API required orchestra with full features and it's free. Thank you for the inspiration and breakthrough Ben and Milla.
 
 ---
 
 ## The Breakthrough
 
-I didn’t set out to build another AI tool.
+I didn’t set out to build another AI tool. In fact, had been fooling around with trying to build something like this for few weeks. I was stuck at the memory layer part of it, which is frankly one of the most important. Having to explain myself over and over again every time I went to work on this massive stack that I've developed for my publishing companies was very frustrating trying to control the drift. Explaining my project to the agent every time I started was absolutely maddening. And then I see MemPalace. It was a Eureka moment where I was able to go, "That's the missing part that I have not built."
 
-I installed MemPalace.
-
-And for the first time, something was missing — not memory, not models, not tools.
-
-Execution.
+I installed MemPalace. Yeah that's pretty much. What did it.
 
 MemPalace gave me perfect recall.
 
@@ -25,13 +23,13 @@ What it didn’t give me was:
 - a way to enforce rules
 - a way to keep work moving forward without resetting
 
-So I built the missing layer.
+So I built the missing layer on top of what they built and I've connected it to my completely open source Ollama stack.
 
 ---
 
 ## The Problem
 
-You finally get an AI to understand your system.
+You finally get an AI to understand your system. As anyone knows it's frustrating because it has no recall to speak of very little, and you burned through a lot of tokens and time telling the same thing over and over again when it goes off the guard rails when it ignores your direct to some prompts and just break stuff.
 
 You explain:
 - your architecture
@@ -60,7 +58,7 @@ Even worse:
 
 ## MemPalace Solves Memory
 
-MemPalace is the first system that actually fixes memory:
+MemPalace is the first system that actually fixed memory issues immediatelu so I could make this:
 
 - stores everything
 - retrieves intelligently
