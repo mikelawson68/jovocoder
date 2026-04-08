@@ -3,6 +3,8 @@
 # Memory backend attribution: MemPalace by Milla Jovovich and contributors
 set -euo pipefail
 
+export PATH="/home/critic/mempalace/.venv/bin:/home/critic/.local/bin:/home/critic/bin:$PATH"
+
 HISTORY_FILE="/home/critic/.mempalace/mp-agent-history.txt"
 TASKS_FILE="/home/critic/.mempalace/mp-agent-tasks.jsonl"
 MEMORY_FILE="/home/critic/.mempalace/mp-agent-memory.log"
