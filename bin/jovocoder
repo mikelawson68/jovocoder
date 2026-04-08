@@ -4,42 +4,30 @@ set -euo pipefail
 HISTORY_FILE="$HOME/.mempalace/mp-agent-history.txt"
 TASKS_FILE="$HOME/.mempalace/mp-agent-tasks.jsonl"
 MEMORY_FILE="$HOME/.mempalace/mp-agent-memory.log"
+LESSONS_FILE="$HOME/.mempalace/lessons.log"
 IDENTITY_FILE="$HOME/.mempalace/identity.txt"
 SSH_TARGETS_FILE="$HOME/jovocoder/config/ssh_targets.json"
 LAST_RESPONSE_FILE="/tmp/jovocoder-last-response.txt"
 CMD_OUTPUT_FILE="/tmp/jovocoder-cmd-output.txt"
 
 mkdir -p "$HOME/.mempalace"
-touch "$HISTORY_FILE" "$TASKS_FILE" "$MEMORY_FILE"
+touch "$HISTORY_FILE" "$TASKS_FILE" "$MEMORY_FILE" "$LESSONS_FILE"
 
-have_cmd() {
-  command -v "$1" >/dev/null 2>&1
-}
-
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || { echo "missing $1"; exit 1; }
-}
+have_cmd() { command -v "$1" >/dev/null 2>&1; }
+require_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "missing $1"; exit 1; }; }
 
 require_cmd ollama
 require_cmd python3
-
-have_mempalace=0
-if have_cmd mempalace; then
-  have_mempalace=1
-fi
 
 resolve_safe_target() {
   local target="$1"
   python3 - "$SSH_TARGETS_FILE" "$target" <<'PY'
 import json, sys, pathlib
-
 cfg = pathlib.Path(sys.argv[1])
 target = sys.argv[2]
-
 if not cfg.exists():
     print("NO_CONFIG")
     raise SystemExit(1)
-
 data = json.loads(cfg.read_text())
 targets = data.get("targets", {})
 
@@ -91,8 +79,7 @@ is_safe_command() {
 }
 
 ssh_command_allowed() {
-  local cmd="$1"
-  local token target
+  local cmd="$1" token target
   token="$(echo "$cmd" | sed -nE "s/^ssh[[:space:]]+([^[:space:]]+).*/\1/p")"
   [ -z "$token" ] && return 1
   target="${token#*@}"
@@ -137,39 +124,49 @@ chat_response() {
   local task="$1"
   ollama run gemma3:4b <<EOP | tee "$LAST_RESPONSE_FILE"
 You are JovoCoder.
-
-Rules:
-- Be concise, but natural.
-- Do not roleplay or invent identity.
-- Casual input: respond like a normal human, short and relaxed.
-- Task input: be structured, actionable, and safe.
-- Unknown slash commands: say "unknown command".
-- Do not hallucinate or invent details.
-
+Be concise, natural, no roleplay, no hallucinations.
 Input:
 $task
 EOP
+}
+
+write_lesson() {
+  local line="$1"
+  printf '%s | %s\n' "$(date -Is)" "$line" >> "$LESSONS_FILE"
 }
 
 run_basic_audit() {
   local verdict
   echo "[audit] basic system audit"
   echo
-  verdict="$(validator_check "whoami" || true)"; echo "[validator] $verdict"; if echo "$verdict" | grep -q '^PASS:'; then run_command "whoami"; fi
-  verdict="$(validator_check "hostname" || true)"; echo "[validator] $verdict"; if echo "$verdict" | grep -q '^PASS:'; then run_command "hostname"; fi
-  verdict="$(validator_check "uptime" || true)"; echo "[validator] $verdict"; if echo "$verdict" | grep -q '^PASS:'; then run_command "uptime"; fi
-  verdict="$(validator_check "df -h" || true)"; echo "[validator] $verdict"; if echo "$verdict" | grep -q '^PASS:'; then run_command "df -h"; fi
-  verdict="$(validator_check "free -h" || true)"; echo "[validator] $verdict"; if echo "$verdict" | grep -q '^PASS:'; then run_command "free -h"; fi
+  for c in "whoami" "hostname" "uptime" "df -h" "free -h"; do
+    verdict="$(validator_check "$c" || true)"
+    echo "[validator] $verdict"
+    if echo "$verdict" | grep -q '^PASS:'; then
+      run_command "$c"
+    fi
+  done
 }
 
-run_remote_apache_php_audit() {
+explain_plan_web_audit() {
   local resolved="$1"
-  local verdict
-  local cmd
-  local host_out apache_out php_out http_out
-  local apache_ver php_ver http_status
+  echo "[explain] plan for web audit on $resolved"
+  echo "1) ssh $resolved 'hostname'"
+  echo "2) ssh $resolved 'ps aux | grep -E \"apache2|nginx\" | grep -v grep'"
+  echo "3) ssh $resolved 'apache2ctl -v'  OR  ssh $resolved 'nginx -v 2>&1'"
+  echo "4) ssh $resolved 'php -v'"
+  echo "5) ssh $resolved 'curl -sSI http://localhost'"
+  echo
+}
 
-  echo "[exec-task] remote apache/php audit"
+run_remote_web_php_audit() {
+  local alias_name="$1"
+  local resolved="$2"
+  local verdict cmd
+  local host_out web_detect_out web_out php_out http_out
+  local web_type web_ver php_ver http_status
+
+  echo "[exec-task] remote web/php audit"
   echo
 
   cmd="ssh $resolved 'hostname'"
@@ -183,7 +180,7 @@ run_remote_apache_php_audit() {
   run_command "$cmd"
   host_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
 
-  cmd="ssh $resolved 'apache2ctl -v'"
+  cmd="ssh $resolved 'ps aux | grep -E \"apache2|nginx\" | grep -v grep'"
   verdict="$(validator_check "$cmd" || true)"
   echo "[validator] $verdict"
   if ! echo "$verdict" | grep -q '^PASS:'; then
@@ -192,7 +189,30 @@ run_remote_apache_php_audit() {
     return 1
   fi
   run_command "$cmd"
-  apache_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
+  web_detect_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
+
+  if echo "$web_detect_out" | grep -q 'apache2'; then
+    web_type="apache"
+    cmd="ssh $resolved 'apache2ctl -v'"
+  elif echo "$web_detect_out" | grep -q 'nginx'; then
+    web_type="nginx"
+    cmd="ssh $resolved 'nginx -v 2>&1'"
+  else
+    web_type="none"
+    cmd="echo no_web_server_detected"
+  fi
+
+  echo "[detect] web server: $web_type"
+
+  verdict="$(validator_check "$cmd" || true)"
+  echo "[validator] $verdict"
+  if ! echo "$verdict" | grep -q '^PASS:'; then
+    echo "[stop] command rejected"
+    echo
+    return 1
+  fi
+  run_command "$cmd"
+  web_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
 
   cmd="ssh $resolved 'php -v'"
   verdict="$(validator_check "$cmd" || true)"
@@ -216,45 +236,108 @@ run_remote_apache_php_audit() {
   run_command "$cmd"
   http_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
 
-  apache_ver="$(printf '%s
-' "$apache_out" | sed -nE 's/^Server version: Apache\/([^ ]+).*/\1/p' | head -n 1)"
-  php_ver="$(printf '%s
-' "$php_out" | sed -nE 's/^PHP ([^ ]+).*/\1/p' | head -n 1)"
-  http_status="$(printf '%s
-' "$http_out" | sed -nE 's/^HTTP\/[^ ]+[[:space:]]+([0-9]{3}).*/\1/p' | head -n 1)"
+  if [ "$web_type" = "apache" ]; then
+    web_ver="$(printf '%s\n' "$web_out" | sed -nE 's/^Server version: Apache\/([^ ]+).*/\1/p' | head -n 1)"
+  elif [ "$web_type" = "nginx" ]; then
+    web_ver="$(printf '%s\n' "$web_out" | sed -nE 's/^nginx version: nginx\/([^ ]+).*/\1/p' | head -n 1)"
+  else
+    web_ver="unknown"
+  fi
 
-  echo "[done] apache/php audit sequence completed"
+  php_ver="$(printf '%s\n' "$php_out" | sed -nE 's/^PHP ([^ ]+).*/\1/p' | head -n 1)"
+  http_status="$(printf '%s\n' "$http_out" | sed -nE 's/^HTTP\/[^ ]+[[:space:]]+([0-9]{3}).*/\1/p' | head -n 1)"
+
+  echo "[done] web/php audit sequence completed"
   echo
   echo "AUDIT SUMMARY:"
-  echo "Target: test.artistpro.media"
+  echo "Target: $alias_name"
   echo "Host: ${host_out%%$'\n'*}"
-  echo "Apache: ${apache_ver:-unknown}"
+  echo "Web: ${web_type:-unknown}"
+  echo "Web Version: ${web_ver:-unknown}"
   echo "PHP: ${php_ver:-unknown}"
   echo "HTTP: ${http_status:-unknown}"
-  if [ "${http_status:-}" = "200" ] && [ -n "${apache_ver:-}" ] && [ -n "${php_ver:-}" ]; then
+
+  if [ "${http_status:-}" = "200" ] && [ -n "${php_ver:-}" ] && [ "${web_type:-}" != "none" ]; then
     echo "Status: PASS"
+    write_lesson "web/php audit PASS on $alias_name ($web_type)"
   else
     echo "Status: REVIEW"
+    if [ "${http_status:-}" != "200" ]; then
+      echo
+      echo "[branch] HTTP not 200 → checking service status and logs"
+      if [ "$web_type" = "apache" ]; then
+        cmd="ssh $resolved 'systemctl status apache2 --no-pager'"
+        verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
+        if echo "$verdict" | grep -q '^PASS:'; then run_command "$cmd"; fi
+        cmd="ssh $resolved 'tail -n 50 /var/log/apache2/error.log'"
+        verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
+        if echo "$verdict" | grep -q '^PASS:'; then run_command "$cmd"; fi
+      elif [ "$web_type" = "nginx" ]; then
+        cmd="ssh $resolved 'systemctl status nginx --no-pager'"
+        verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
+        if echo "$verdict" | grep -q '^PASS:'; then run_command "$cmd"; fi
+        cmd="ssh $resolved 'tail -n 50 /var/log/nginx/error.log'"
+        verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
+        if echo "$verdict" | grep -q '^PASS:'; then run_command "$cmd"; fi
+      fi
+    fi
   fi
   echo
 }
 
+list_safe_targets() {
+  python3 - "$SSH_TARGETS_FILE" <<'PY'
+import json, sys, pathlib
+cfg = pathlib.Path(sys.argv[1])
+if not cfg.exists():
+    raise SystemExit(0)
+data = json.loads(cfg.read_text())
+for alias, t in data.get("targets", {}).items():
+    if t.get("safe") is True:
+        print(alias)
+PY
+}
+
 exec_task() {
   local task="$1"
-  local task_lc resolved
+  local task_lc resolved alias
 
   task_lc="$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')"
 
-  if echo "$task_lc" | grep -q "test.artistpro.media" && \
-     echo "$task_lc" | grep -q "apache" && \
-     echo "$task_lc" | grep -q "php"; then
+  if echo "$task_lc" | grep -q '^explain '; then
+    task_lc="${task_lc#explain }"
+    if echo "$task_lc" | grep -q 'test.artistpro.media' && echo "$task_lc" | grep -q 'apache\|nginx\|web' && echo "$task_lc" | grep -q 'php'; then
+      resolved="$(resolve_safe_target "test.artistpro.media" 2>/dev/null || true)"
+      if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
+        echo "[validator] FAIL: target not configured safe"
+        echo
+        return 1
+      fi
+      explain_plan_web_audit "$resolved"
+      return 0
+    fi
+  fi
+
+  if echo "$task_lc" | grep -q 'all' && echo "$task_lc" | grep -q 'php' && echo "$task_lc" | grep -q 'apache\|nginx\|web'; then
+    for alias in $(list_safe_targets); do
+      resolved="$(resolve_safe_target "$alias" 2>/dev/null || true)"
+      [ -z "$resolved" ] && continue
+      [ "$resolved" = "NOT_FOUND" ] && continue
+      [ "$resolved" = "UNSAFE" ] && continue
+      [ "$resolved" = "NO_CONFIG" ] && continue
+      run_remote_web_php_audit "$alias" "$resolved"
+    done
+    return 0
+  fi
+
+  if echo "$task_lc" | grep -q 'test.artistpro.media' && echo "$task_lc" | grep -q 'php' && echo "$task_lc" | grep -q 'apache\|nginx\|web'; then
     resolved="$(resolve_safe_target "test.artistpro.media" 2>/dev/null || true)"
     if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
       echo "[validator] FAIL: target not configured safe"
       echo
       return 1
     fi
-    run_remote_apache_php_audit "$resolved"
+    run_remote_web_php_audit "test.artistpro.media" "$resolved"
     return 0
   fi
 
@@ -318,6 +401,20 @@ while true; do
 
     /*)
       echo "unknown command"
+      continue
+      ;;
+  esac
+
+  echo "[thinking]"
+  chat_response "$TASK"
+
+  {
+    echo "USER: $TASK"
+    echo "AI:"
+    cat "$LAST_RESPONSE_FILE" 2>/dev/null || true
+    echo
+  } >> "$HISTORY_FILE"
+done
       continue
       ;;
   esac
