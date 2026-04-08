@@ -1,4 +1,4 @@
-![JovoCoder Logo](docs/logo.png)
+![JovoCoder Logo](docs/jovocoder-source.png)
 
 # JovoCoder
 
