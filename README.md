@@ -19,9 +19,13 @@ Built on top of MemPalace by Milla Jovovich & Ben Sigman. Their release of this 
 
 ## The Breakthrough
 
-I didn’t set out to build another AI tool. In fact, had been fooling around with trying to build something like this for few weeks. I was stuck at the memory layer part of it, which is frankly one of the most important. Having to explain myself over and over again every time I went to work on this massive stack that I've developed for my publishing companies was very frustrating trying to control the drift. Explaining my project to the agent every time I started was absolutely maddening. And then I see MemPalace. It was a Eureka moment where I was able to go, "That's the missing part that I have not built."
+I didn’t set out to build another AI tool. In fact, I had been fooling around with trying to build something like this for a few weeks. I was stuck at the memory layer, which is frankly one of the most important parts. Having to explain myself over and over again every time I went to work on this massive stack that I've developed for my publishing companies was extremely frustrating.
 
-I installed MemPalace. MemPalace gave me perfect recall.
+Then I found MemPalace.
+
+It was a Eureka moment.
+
+MemPalace gave me perfect recall.
 
 What it didn’t give me was:
 
@@ -29,28 +33,25 @@ What it didn’t give me was:
 - a way to enforce rules  
 - a way to keep work moving forward without resetting  
 
-So I built the missing layer on top of what they built and I've connected it to my completely open source Ollama stack.
+So I built the missing layer on top of it and connected it to my fully local Ollama stack.
 
 ---
 
 ## The Problem
 
-You finally get an AI to understand your system. As anyone knows it's frustrating because it has no recall to speak of very little, and you burned through a lot of tokens and time telling the same thing over and over again when it goes off the guard rails when it ignores your directives to some prompts and just break stuff.
+You finally get an AI to understand your system.
 
-You explain:
+Then it forgets.
 
-- your architecture  
-- your constraints  
-- your failures  
-- your rules  
+It ignores rules.  
+It drifts.  
+It breaks things.  
+It restores things it shouldn’t.  
+It goes off on its own.
 
-And then…
+And when it gets far enough off track, you have no choice but to start over.
 
-It forgets everything. It randomly restores backups that it should not. It ignores rules to fix instead of taking off in building on its own. Extremely unwieldy technology at this point in history. Because of all of its shortcomings people have had to invent ways around features that frankly, I think these AI companies should've created to begin with. However, I think that the sale of time and tokens is very attractive to venture capital companies who invest in them. A problem is you get so far down the drift you get so far down the mistakes it's difficult sometimes to get back where you are. You get backups can easily become corrupted as can your GIT, and other files. Without strict guard rails, you find yourself repeatedly starting over and so you do…
-
-You start over.
-
-Every session.
+Every. Single. Time.
 
 ---
 
@@ -65,7 +66,7 @@ Even worse:
 
 ## MemPalace Solves Memory
 
-MemPalace is the first system that actually fixed memory issues immediatelu so I could make this:
+MemPalace is the first system that actually fixed memory issues enough to make this possible:
 
 - stores everything  
 - retrieves intelligently  
