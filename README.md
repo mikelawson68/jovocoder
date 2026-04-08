@@ -161,7 +161,28 @@ jovocoder
 /handoff
 /next
 /autoloop TASK
+/exec
+/audit
+/ssh-audit
+/exec-task
 
+---
+
+Optional: Auto-Launch on SSH Login
+
+If you want JovoCoder to start automatically when you SSH into a system:
+echo '
+# auto-start jovocoder for interactive ssh
+if [[ $- == *i* ]]; then
+  if command -v jovocoder >/dev/null 2>&1; then
+    jovocoder
+    exit
+  fi
+fi
+' >> ~/.bashrc
+
+To bypass auto-launch and get a normal shell:
+ssh -t user@host "bash --noprofile --norc"
 ---
 
 ## Models
