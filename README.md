@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/local--first-yes-brightgreen?style=for-the-badge" />
   <img src="https://img.shields.io/badge/no%20api-required-blueviolet?style=for-the-badge" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" />
-</p> src="https://img.shields.io/badge/license-MIT-success.svg" />
+</p>
 
 # JovoCoder
 
