@@ -5,7 +5,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.1.0-blue" />
   <img src="https://img.shields.io/badge/local--first-yes-brightgreen" />
-  <img src="https://img.shields.io/badge/no--api-required-yes-blueviolet" />
+  <img src="https://img.shields.io/badge/no%20api-required-blueviolet" alt="no api required" />
+  <img src="https://img.shields.io/badge/license-MIT-success.svg" />
 </p>
 
 # JovoCoder
