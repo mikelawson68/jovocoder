@@ -35,7 +35,7 @@ So I built the missing layer on top of what they built and I've connected it to 
 
 ## The Problem
 
-You finally get an AI to understand your system. As anyone knows it's frustrating because it has no recall to speak of very little, and you burned through a lot of tokens and time telling the same thing over and over again when it goes off the guard rails when it ignores your direct to some prompts and just break stuff.
+You finally get an AI to understand your system. As anyone knows it's frustrating because it has no recall to speak of very little, and you burned through a lot of tokens and time telling the same thing over and over again when it goes off the guard rails when it ignores your directives to some prompts and just break stuff.
 
 You explain:
 
@@ -46,7 +46,7 @@ You explain:
 
 And then…
 
-It forgets everything.
+It forgets everything. It randomly restores backups that it should not. It ignores rules to fix instead of taking off in building on its own. Extremely unwieldy technology at this point in history. Because of all of its shortcomings people have had to invent ways around features that frankly, I think these AI companies should've created to begin with. However, I think that the sale of time and tokens is very attractive to venture capital companies who invest in them. A problem is you get so far down the drift you get so far down the mistakes it's difficult sometimes to get back where you are. You get backups can easily become corrupted as can your GIT, and other files. Without strict guard rails, you find yourself repeatedly starting over and so you do…
 
 You start over.
 
