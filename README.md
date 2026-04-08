@@ -137,7 +137,7 @@ bash scripts/verify.sh
 
 ## Run
 
-/home/critic/bin/jovocoder  
+jovocoder  
 
 ---
 
