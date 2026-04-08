@@ -1,517 +1,309 @@
 #!/usr/bin/env bash
-# JovoCoder — built on top of MemPalace
-# Memory backend attribution: MemPalace by Milla Jovovich and contributors
 set -euo pipefail
 
-export PATH="/home/critic/mempalace/.venv/bin:/home/critic/.local/bin:/home/critic/bin:$PATH"
-
-HISTORY_FILE="/home/critic/.mempalace/mp-agent-history.txt"
-TASKS_FILE="/home/critic/.mempalace/mp-agent-tasks.jsonl"
-MEMORY_FILE="/home/critic/.mempalace/mp-agent-memory.log"
+HISTORY_FILE="$HOME/.mempalace/mp-agent-history.txt"
+TASKS_FILE="$HOME/.mempalace/mp-agent-tasks.jsonl"
+MEMORY_FILE="$HOME/.mempalace/mp-agent-memory.log"
+IDENTITY_FILE="$HOME/.mempalace/identity.txt"
+SSH_TARGETS_FILE="$HOME/jovocoder/config/ssh_targets.json"
 LAST_RESPONSE_FILE="/tmp/jovocoder-last-response.txt"
+CMD_OUTPUT_FILE="/tmp/jovocoder-cmd-output.txt"
 
+mkdir -p "$HOME/.mempalace"
 touch "$HISTORY_FILE" "$TASKS_FILE" "$MEMORY_FILE"
+
+have_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || { echo "missing $1"; exit 1; }
 }
 
-require_cmd mempalace
 require_cmd ollama
 require_cmd python3
 
-classify_role() {
-  local task="$1"
-  local lower
-  lower="$(echo "$task" | tr '[:upper:]' '[:lower:]')"
+have_mempalace=0
+if have_cmd mempalace; then
+  have_mempalace=1
+fi
 
-  if echo "$lower" | grep -E -q 'validate|check|verify|safe|risk|canon|production|test first'; then
-    echo "validator"
-  elif echo "$lower" | grep -E -q 'php|code|function|class|refactor|bug|fix|sql|query|implement|write'; then
-    echo "coder"
-  else
-    echo "planner"
+resolve_safe_target() {
+  local target="$1"
+  python3 - "$SSH_TARGETS_FILE" "$target" <<'PY'
+import json, sys, pathlib
+
+cfg = pathlib.Path(sys.argv[1])
+target = sys.argv[2]
+
+if not cfg.exists():
+    print("NO_CONFIG")
+    raise SystemExit(1)
+
+data = json.loads(cfg.read_text())
+targets = data.get("targets", {})
+
+if target in targets:
+    t = targets[target]
+    if t.get("safe") is True:
+        print(f'{t.get("user","critic")}@{t.get("host")}')
+        raise SystemExit(0)
+    print("UNSAFE")
+    raise SystemExit(2)
+
+for alias, t in targets.items():
+    if t.get("host") == target:
+        if t.get("safe") is True:
+            print(f'{t.get("user","critic")}@{t.get("host")}')
+            raise SystemExit(0)
+        print("UNSAFE")
+        raise SystemExit(2)
+
+print("NOT_FOUND")
+raise SystemExit(3)
+PY
+}
+
+is_safe_command() {
+  local cmd="$1"
+
+  case "$cmd" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+
+  if echo "$cmd" | grep -Eiq '(^|[[:space:]])(rm|reboot|shutdown|poweroff|halt)([[:space:]]|$)'; then
+    return 1
   fi
+
+  if echo "$cmd" | grep -Eiq 'sed[[:space:]]+-i|perl[[:space:]]+-pi|systemctl[[:space:]]+restart|service[[:space:]].*[[:space:]]restart|apt[[:space:]]|apt-get[[:space:]]|yum[[:space:]]|dnf[[:space:]]|pip[[:space:]]|pip3[[:space:]]|npm[[:space:]]|chown[[:space:]]|chmod[[:space:]]'; then
+    return 1
+  fi
+
+  if echo "$cmd" | grep -Eiq '(^|[[:space:]])(mv|cp)([[:space:]]|$)'; then
+    return 1
+  fi
+
+  if echo "$cmd" | grep -Eiq 'mysql[[:space:]].*(-e|--execute)|psql[[:space:]].*(-c|--command)'; then
+    return 1
+  fi
+
+  return 0
 }
 
-model_for_role() {
-  case "$1" in
-    planner) echo "llama3.1:8b" ;;
-    coder) echo "codellama:13b-instruct" ;;
-    validator) echo "gemma4:26b" ;;
-  esac
+ssh_command_allowed() {
+  local cmd="$1"
+  local token target
+  token="$(echo "$cmd" | sed -nE "s/^ssh[[:space:]]+([^[:space:]]+).*/\1/p")"
+  [ -z "$token" ] && return 1
+  target="${token#*@}"
+  resolve_safe_target "$target" >/dev/null 2>&1
 }
 
-system_prompt_for_role() {
-  case "$1" in
-    planner)
-      cat <<'EOP'
-You are the planner agent.
-Break work into safe, minimal, verifiable steps.
-Prioritize next actions.
-EOP
-      ;;
-    coder)
-      cat <<'EOP'
-You are the coder agent.
-Provide concrete, minimal, safe implementation steps.
-Do not invent files or paths not present in memory.
-Prefer minimal changes over rewrites.
-EOP
-      ;;
-    validator)
-      cat <<'EOP'
-You are the validator agent.
-Enforce canon, safety, production boundaries, and data integrity.
-Reject vague or risky actions.
-Prefer caution over speed.
-EOP
-      ;;
-  esac
-}
+validator_check() {
+  local cmd="$1"
 
-add_task() {
-  python3 - "$TASKS_FILE" "$1" <<'PY2'
-import json, sys, datetime, pathlib
-path = pathlib.Path(sys.argv[1])
-text = sys.argv[2]
-task = {
-    "id": int(datetime.datetime.now().timestamp()),
-    "status": "open",
-    "text": text,
-    "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
-}
-with path.open("a") as f:
-    f.write(json.dumps(task) + "\n")
-print(f'added task #{task["id"]}: {task["text"]}')
-PY2
-}
+  if ! is_safe_command "$cmd"; then
+    echo "FAIL: blocked by safety policy"
+    return 1
+  fi
 
-list_tasks() {
-  python3 - "$TASKS_FILE" <<'PY2'
-import json, sys, pathlib
-path = pathlib.Path(sys.argv[1])
-rows = []
-if path.exists():
-    for line in path.read_text().splitlines():
-        if line.strip():
-            rows.append(json.loads(line))
-open_rows = [r for r in rows if r.get("status") == "open"]
-done_rows = [r for r in rows if r.get("status") == "done"]
-print("OPEN TASKS")
-if open_rows:
-    for r in open_rows:
-        print(f'  #{r["id"]}  {r["text"]}')
-else:
-    print("  (none)")
-print("")
-print("DONE TASKS")
-if done_rows:
-    for r in done_rows[-10:]:
-        print(f'  #{r["id"]}  {r["text"]}')
-else:
-    print("  (none)")
-PY2
-}
-
-done_task() {
-  python3 - "$TASKS_FILE" "$1" <<'PY2'
-import json, sys, pathlib
-path = pathlib.Path(sys.argv[1])
-target = int(sys.argv[2])
-rows = []
-found = False
-for line in path.read_text().splitlines():
-    if not line.strip():
-        continue
-    row = json.loads(line)
-    if row.get("id") == target:
-        row["status"] = "done"
-        found = True
-    rows.append(row)
-path.write_text("".join(json.dumps(r) + "\n" for r in rows))
-print(f"marked task #{target} done" if found else f"task #{target} not found")
-PY2
-}
-
-render_open_tasks() {
-  python3 - "$TASKS_FILE" <<'PY2'
-import json, sys, pathlib
-path = pathlib.Path(sys.argv[1])
-rows = []
-if path.exists():
-    for line in path.read_text().splitlines():
-        if line.strip():
-            rows.append(json.loads(line))
-open_rows = [r for r in rows if r.get("status") == "open"]
-if not open_rows:
-    print("(none)")
-else:
-    for r in open_rows[-10:]:
-        print(f'#{r["id"]}: {r["text"]}')
-PY2
-}
-
-remember_note() {
-  python3 - "$MEMORY_FILE" "$1" <<'PY2'
-import sys, pathlib, datetime
-path = pathlib.Path(sys.argv[1])
-text = sys.argv[2]
-stamp = datetime.datetime.now().isoformat(timespec="seconds")
-with path.open("a") as f:
-    f.write(f"[{stamp}] {text}\n")
-print(f"remembered: {text}")
-PY2
-}
-
-show_memory() {
-  echo "RECENT MEMORY"
-  tail -n 20 "$MEMORY_FILE" 2>/dev/null || true
-}
-
-resume_state() {
-  echo "=== RESUME STATE ==="
-  echo
-  echo "OPEN TASKS"
-  render_open_tasks
-  echo
-  echo "RECENT MEMORY"
-  tail -n 10 "$MEMORY_FILE" 2>/dev/null || true
-  echo
-  echo "RECENT CONTEXT"
-  tail -n 20 "$HISTORY_FILE" 2>/dev/null || true
-  echo
-}
-
-build_context() {
-  local task="$1"
-  {
-    echo "## IDENTITY"
-    [ -f /home/critic/.mempalace/identity.txt ] && cat /home/critic/.mempalace/identity.txt
-    echo
-    echo "## OPEN TASKS"
-    render_open_tasks
-    echo
-    echo "## MEMORY"
-    tail -n 10 "$MEMORY_FILE" 2>/dev/null || true
-    echo
-    echo "## CONTEXT"
-    tail -n 20 "$HISTORY_FILE" 2>/dev/null || true
-    echo
-    echo "## LONG-TERM"
-    mempalace search "$task" 2>/dev/null || true
-  }
-}
-
-run_single_agent() {
-  local task="$1"
-  local role model tmp_ctx tmp_prompt
-
-  role="$(classify_role "$task")"
-  model="$(model_for_role "$role")"
-
-  echo "[agent → $role | $model]"
-
-  tmp_ctx="$(mktemp /tmp/jovocoder-ctx.XXXXXX.txt)"
-  tmp_prompt="$(mktemp /tmp/jovocoder-prompt.XXXXXX.txt)"
-
-  build_context "$task" > "$tmp_ctx"
-
-  cat > "$tmp_prompt" <<EOP
-$(system_prompt_for_role "$role")
-
-Use memory, tasks, canon, and recent context to guide your answer.
-Be concise, actionable, and safe.
-Do not hallucinate.
-Do not invent files, paths, or steps not supported by memory.
-
-=== MEMORY ===
-$(cat "$tmp_ctx")
-
-=== TASK ===
-$task
-EOP
-
-  echo
-  ollama run "$model" < "$tmp_prompt" | tee "$LAST_RESPONSE_FILE"
-  echo
-
-  {
-    echo "USER: $task"
-    echo "ROLE: $role"
-    echo "AI:"
-    cat "$LAST_RESPONSE_FILE"
-    echo
-  } >> "$HISTORY_FILE"
-
-  rm -f "$tmp_ctx" "$tmp_prompt"
-}
-
-run_model() {
-  local model="$1"
-  local prompt_file
-  prompt_file="$(mktemp /tmp/jovocoder-loop-prompt.XXXXXX.txt)"
-  cat > "$prompt_file"
-  ollama run "$model" < "$prompt_file"
-  rm -f "$prompt_file"
-}
-
-loop_refine() {
-  local user_task="$1"
-  local max_rounds="${2:-3}"
-  local round=1
-  local planner_out=""
-  local coder_out=""
-  local validator_out=""
-  local context=""
-
-  context="$(build_context "$user_task")"
-
-  while [ "$round" -le "$max_rounds" ]; do
-    echo
-    echo "===== ROUND $round / $max_rounds ====="
-    echo
-
-    echo "[planner → llama3.1:8b]"
-    planner_out="$(
-      cat <<EOP | run_model "llama3.1:8b"
-You are the planner agent.
-Break the task into safe, minimal, verifiable steps.
-Respect canon, production boundaries, and test-first workflow.
-Do not propose risky changes without flagging them.
-
-=== CONTEXT ===
-$context
-
-=== USER TASK ===
-$user_task
-
-Return:
-1. Goal
-2. Scope
-3. Atomic steps
-4. Verification
-5. Data impact
-EOP
-    )"
-    echo "$planner_out"
-    echo
-
-    echo "[coder → codellama:13b-instruct]"
-    coder_out="$(
-      cat <<EOP | run_model "codellama:13b-instruct"
-You are the coder agent.
-Given the plan, produce the safest implementation candidate.
-Use minimal changes only.
-Do not invent files or paths not supported by context.
-Do not claim success.
-If code cannot be safely proposed from available context, say so.
-
-=== CONTEXT ===
-$context
-
-=== USER TASK ===
-$user_task
-
-=== PLAN ===
-$planner_out
-
-Return:
-1. Proposed implementation candidate
-2. Exact affected area if known
-3. Risks
-4. Verification commands or checks
-EOP
-    )"
-    echo "$coder_out"
-    echo
-
-    echo "[validator → gemma4:26b]"
-    validator_out="$(
-      cat <<EOP | run_model "gemma4:26b"
-You are the validator agent.
-Enforce canon, safety, production boundaries, and data integrity.
-Reject vague, risky, unverifiable, or production-touching proposals.
-If acceptable, start with PASS.
-If revision needed, start with REVISE.
-If impossible to proceed safely, start with STOP.
-
-=== CONTEXT ===
-$context
-
-=== USER TASK ===
-$user_task
-
-=== PLAN ===
-$planner_out
-
-=== CANDIDATE ===
-$coder_out
-
-Return:
-- Decision: PASS / REVISE / STOP
-- Reasons
-- Required corrections if any
-EOP
-    )"
-    echo "$validator_out"
-    echo
-
-    if echo "$validator_out" | grep -q '^PASS'; then
-      {
-        echo "USER: /autoloop $user_task"
-        echo "ROLE: loop"
-        echo "AI:"
-        echo "FINAL VALIDATED CANDIDATE"
-        echo
-        echo "PLAN:"
-        echo "$planner_out"
-        echo
-        echo "CANDIDATE:"
-        echo "$coder_out"
-        echo
-        echo "VALIDATION:"
-        echo "$validator_out"
-        echo
-      } >> "$HISTORY_FILE"
-
-      echo "===== FINAL RESULT: PASS ====="
-      return 0
-    fi
-
-    if echo "$validator_out" | grep -q '^STOP'; then
-      {
-        echo "USER: /autoloop $user_task"
-        echo "ROLE: loop"
-        echo "AI:"
-        echo "LOOP STOPPED"
-        echo
-        echo "$validator_out"
-        echo
-      } >> "$HISTORY_FILE"
-
-      echo "===== FINAL RESULT: STOP ====="
+  if echo "$cmd" | grep -Eq '^ssh[[:space:]]+'; then
+    if ! ssh_command_allowed "$cmd"; then
+      echo "FAIL: ssh target not configured safe"
       return 1
     fi
+  fi
 
-    context="$context
+  echo "PASS: safe to execute"
+  return 0
+}
 
-## PRIOR ROUND PLAN
-$planner_out
+run_command() {
+  local cmd="$1"
 
-## PRIOR ROUND CANDIDATE
-$coder_out
+  echo
+  echo "[exec] $cmd"
+  echo
 
-## PRIOR ROUND VALIDATION
-$validator_out"
-    round=$((round+1))
-  done
+  bash -c "$cmd" > "$CMD_OUTPUT_FILE" 2>&1 || true
 
-  {
-    echo "USER: /autoloop $user_task"
-    echo "ROLE: loop"
-    echo "AI:"
-    echo "MAX ROUNDS REACHED"
+  echo "--- OUTPUT START ---"
+  cat "$CMD_OUTPUT_FILE"
+  echo "--- OUTPUT END ---"
+  echo
+}
+
+chat_response() {
+  local task="$1"
+  ollama run gemma3:4b <<EOP | tee "$LAST_RESPONSE_FILE"
+You are JovoCoder.
+
+Rules:
+- Be concise, but natural.
+- Do not roleplay or invent identity.
+- Casual input: respond like a normal human, short and relaxed.
+- Task input: be structured, actionable, and safe.
+- Unknown slash commands: say "unknown command".
+- Do not hallucinate or invent details.
+
+Input:
+$task
+EOP
+}
+
+run_basic_audit() {
+  local verdict
+  echo "[audit] basic system audit"
+  echo
+  verdict="$(validator_check "whoami" || true)"; echo "[validator] $verdict"; if echo "$verdict" | grep -q '^PASS:'; then run_command "whoami"; fi
+  verdict="$(validator_check "hostname" || true)"; echo "[validator] $verdict"; if echo "$verdict" | grep -q '^PASS:'; then run_command "hostname"; fi
+  verdict="$(validator_check "uptime" || true)"; echo "[validator] $verdict"; if echo "$verdict" | grep -q '^PASS:'; then run_command "uptime"; fi
+  verdict="$(validator_check "df -h" || true)"; echo "[validator] $verdict"; if echo "$verdict" | grep -q '^PASS:'; then run_command "df -h"; fi
+  verdict="$(validator_check "free -h" || true)"; echo "[validator] $verdict"; if echo "$verdict" | grep -q '^PASS:'; then run_command "free -h"; fi
+}
+
+run_remote_apache_php_audit() {
+  local resolved="$1"
+  local verdict
+  local cmd
+
+  echo "[exec-task] remote apache/php audit"
+  echo
+
+  cmd="ssh $resolved 'hostname'"
+  verdict="$(validator_check "$cmd" || true)"
+  echo "[validator] $verdict"
+  if ! echo "$verdict" | grep -q '^PASS:'; then
+    echo "[stop] command rejected"
     echo
-    echo "PLAN:"
-    echo "$planner_out"
-    echo
-    echo "CANDIDATE:"
-    echo "$coder_out"
-    echo
-    echo "VALIDATION:"
-    echo "$validator_out"
-    echo
-  } >> "$HISTORY_FILE"
+    return 1
+  fi
+  run_command "$cmd"
 
-  echo "===== FINAL RESULT: MAX ROUNDS REACHED ====="
+  cmd="ssh $resolved 'apache2ctl -v'"
+  verdict="$(validator_check "$cmd" || true)"
+  echo "[validator] $verdict"
+  if ! echo "$verdict" | grep -q '^PASS:'; then
+    echo "[stop] command rejected"
+    echo
+    return 1
+  fi
+  run_command "$cmd"
+
+  cmd="ssh $resolved 'php -v'"
+  verdict="$(validator_check "$cmd" || true)"
+  echo "[validator] $verdict"
+  if ! echo "$verdict" | grep -q '^PASS:'; then
+    echo "[stop] command rejected"
+    echo
+    return 1
+  fi
+  run_command "$cmd"
+
+  cmd="ssh $resolved 'curl -I http://localhost'"
+  verdict="$(validator_check "$cmd" || true)"
+  echo "[validator] $verdict"
+  if ! echo "$verdict" | grep -q '^PASS:'; then
+    echo "[stop] command rejected"
+    echo
+    return 1
+  fi
+  run_command "$cmd"
+
+  echo "[done] apache/php audit sequence completed"
+  echo
+}
+
+exec_task() {
+  local task="$1"
+  local task_lc resolved
+
+  task_lc="$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')"
+
+  if echo "$task_lc" | grep -q "test.artistpro.media" && \
+     echo "$task_lc" | grep -q "apache" && \
+     echo "$task_lc" | grep -q "php"; then
+    resolved="$(resolve_safe_target "test.artistpro.media" 2>/dev/null || true)"
+    if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
+      echo "[validator] FAIL: target not configured safe"
+      echo
+      return 1
+    fi
+    run_remote_apache_php_audit "$resolved"
+    return 0
+  fi
+
+  echo "[validator] FAIL: no deterministic execution path for this task yet"
+  echo
   return 1
 }
 
-show_help() {
-  cat <<'EOP'
-JovoCoder
-built on top of MemPalace
-
-Commands:
-  /help
-  /add TASK
-  /tasks
-  /done ID
-  /remember NOTE
-  /memory
-  /resume
-  /handoff
-  /next
-  /autoloop TASK
-  exit
-EOP
-}
-
-echo ""
 echo " //> JovoCoder"
 echo " built on top of MemPalace"
 echo " type 'exit' to quit"
-echo " commands: /help /add /tasks /done /remember /memory /resume /handoff /next /autoloop"
-echo ""
+echo " commands: /exec /audit /ssh-audit /exec-task"
+echo
 
 while true; do
   printf "//> "
-  IFS= read -r TASK || break
+  read -r TASK || break
+
+  if [ -z "${TASK// }" ]; then
+    continue
+  fi
+
   [ "$TASK" = "exit" ] && break
-  [ -z "$TASK" ] && continue
 
   case "$TASK" in
-    /help)
-      show_help
-      echo
+    /exec\ *)
+      CMD="${TASK#"/exec "}"
+      verdict="$(validator_check "$CMD" || true)"
+      echo "[validator] $verdict"
+      if echo "$verdict" | grep -q '^PASS:'; then
+        run_command "$CMD"
+      fi
       continue
       ;;
-    /add\ *)
-      add_task "${TASK#"/add "}"
-      echo
+
+    /audit)
+      run_basic_audit
       continue
       ;;
-    /tasks)
-      list_tasks
-      echo
+
+    /ssh-audit\ *)
+      RAW_TARGET="${TASK#"/ssh-audit "}"
+      RESOLVED="$(resolve_safe_target "$RAW_TARGET" 2>/dev/null || true)"
+      if [ -z "$RESOLVED" ] || [ "$RESOLVED" = "NOT_FOUND" ] || [ "$RESOLVED" = "UNSAFE" ] || [ "$RESOLVED" = "NO_CONFIG" ]; then
+        echo "[validator] FAIL: target not configured safe"
+        continue
+      fi
+      CMD="ssh $RESOLVED 'hostname && uptime && df -h'"
+      verdict="$(validator_check "$CMD" || true)"
+      echo "[validator] $verdict"
+      if echo "$verdict" | grep -q '^PASS:'; then
+        run_command "$CMD"
+      fi
       continue
       ;;
-    /done\ *)
-      done_task "${TASK#"/done "}"
-      echo
+
+    /exec-task\ *)
+      exec_task "${TASK#"/exec-task "}"
       continue
       ;;
-    /remember\ *)
-      remember_note "${TASK#"/remember "}"
-      echo
-      continue
-      ;;
-    /memory)
-      show_memory
-      echo
-      continue
-      ;;
-    /resume)
-      resume_state
-      echo
-      continue
-      ;;
-    /handoff)
-      resume_state
-      echo
-      continue
-      ;;
-    /next)
-      run_single_agent "Given open tasks, saved memory, canon, and recent context, what is the single best next step?"
-      continue
-      ;;
-    /autoloop\ *)
-      loop_refine "${TASK#"/autoloop "}" 3
-      echo
+
+    /*)
+      echo "unknown command"
       continue
       ;;
   esac
 
-  run_single_agent "$TASK"
+  echo "[thinking]"
+  chat_response "$TASK"
+
+  {
+    echo "USER: $TASK"
+    echo "AI:"
+    cat "$LAST_RESPONSE_FILE" 2>/dev/null || true
+    echo
+  } >> "$HISTORY_FILE"
 done
