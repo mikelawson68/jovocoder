@@ -166,6 +166,8 @@ run_remote_apache_php_audit() {
   local resolved="$1"
   local verdict
   local cmd
+  local host_out apache_out php_out http_out
+  local apache_ver php_ver http_status
 
   echo "[exec-task] remote apache/php audit"
   echo
@@ -179,6 +181,7 @@ run_remote_apache_php_audit() {
     return 1
   fi
   run_command "$cmd"
+  host_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
 
   cmd="ssh $resolved 'apache2ctl -v'"
   verdict="$(validator_check "$cmd" || true)"
@@ -189,6 +192,7 @@ run_remote_apache_php_audit() {
     return 1
   fi
   run_command "$cmd"
+  apache_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
 
   cmd="ssh $resolved 'php -v'"
   verdict="$(validator_check "$cmd" || true)"
@@ -199,8 +203,9 @@ run_remote_apache_php_audit() {
     return 1
   fi
   run_command "$cmd"
+  php_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
 
-  cmd="ssh $resolved 'curl -I http://localhost'"
+  cmd="ssh $resolved 'curl -sSI http://localhost'"
   verdict="$(validator_check "$cmd" || true)"
   echo "[validator] $verdict"
   if ! echo "$verdict" | grep -q '^PASS:'; then
@@ -209,8 +214,28 @@ run_remote_apache_php_audit() {
     return 1
   fi
   run_command "$cmd"
+  http_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
+
+  apache_ver="$(printf '%s
+' "$apache_out" | sed -nE 's/^Server version: Apache\/([^ ]+).*/\1/p' | head -n 1)"
+  php_ver="$(printf '%s
+' "$php_out" | sed -nE 's/^PHP ([^ ]+).*/\1/p' | head -n 1)"
+  http_status="$(printf '%s
+' "$http_out" | sed -nE 's/^HTTP\/[^ ]+[[:space:]]+([0-9]{3}).*/\1/p' | head -n 1)"
 
   echo "[done] apache/php audit sequence completed"
+  echo
+  echo "AUDIT SUMMARY:"
+  echo "Target: test.artistpro.media"
+  echo "Host: ${host_out%%$'\n'*}"
+  echo "Apache: ${apache_ver:-unknown}"
+  echo "PHP: ${php_ver:-unknown}"
+  echo "HTTP: ${http_status:-unknown}"
+  if [ "${http_status:-}" = "200" ] && [ -n "${apache_ver:-}" ] && [ -n "${php_ver:-}" ]; then
+    echo "Status: PASS"
+  else
+    echo "Status: REVIEW"
+  fi
   echo
 }
 
