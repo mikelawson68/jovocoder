@@ -6,7 +6,7 @@
 
 A local-first AI runtime that **doesn’t just remember — it works.**
 
-Built on top of MemPalace by Milla Jovovich & Ben Sigman. Their release of this gave me the breakthrough moment layer that I needed to create an open source completely free non-API required orchestra with full features and it's free. Thank you for the inspiration and breakthrough Ben and Milla.
+Built on top of MemPalace by Milla Jovovich & Ben Sigman. Their release of this gave me the breakthrough moment layer that I needed to create an open source completely free non-API required orchestra with full features and it's free. Thank you for the inspiration and breakthrough Ben and Milla. Get it here, you need it to run JovoCoder. https://github.com/milla-jovovich/mempalace
 
 ---
 
