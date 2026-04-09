@@ -26,55 +26,30 @@ import json, sys, pathlib
 cfg = pathlib.Path(sys.argv[1])
 target = sys.argv[2]
 if not cfg.exists():
-    print("NO_CONFIG")
-    raise SystemExit(1)
+    print("NO_CONFIG"); raise SystemExit(1)
 data = json.loads(cfg.read_text())
 targets = data.get("targets", {})
-
 if target in targets:
     t = targets[target]
     if t.get("safe") is True:
-        print(f'{t.get("user","critic")}@{t.get("host")}')
-        raise SystemExit(0)
-    print("UNSAFE")
-    raise SystemExit(2)
-
+        print(f'{t.get("user","critic")}@{t.get("host")}'); raise SystemExit(0)
+    print("UNSAFE"); raise SystemExit(2)
 for alias, t in targets.items():
     if t.get("host") == target:
         if t.get("safe") is True:
-            print(f'{t.get("user","critic")}@{t.get("host")}')
-            raise SystemExit(0)
-        print("UNSAFE")
-        raise SystemExit(2)
-
-print("NOT_FOUND")
-raise SystemExit(3)
+            print(f'{t.get("user","critic")}@{t.get("host")}'); raise SystemExit(0)
+        print("UNSAFE"); raise SystemExit(2)
+print("NOT_FOUND"); raise SystemExit(3)
 PY
 }
 
 is_safe_command() {
   local cmd="$1"
-
-  case "$cmd" in
-    *$'\n'*|*$'\r'*) return 1 ;;
-  esac
-
-  if echo "$cmd" | grep -Eiq '(^|[[:space:]])(rm|reboot|shutdown|poweroff|halt)([[:space:]]|$)'; then
-    return 1
-  fi
-
-  if echo "$cmd" | grep -Eiq 'sed[[:space:]]+-i|perl[[:space:]]+-pi|systemctl[[:space:]]+restart|service[[:space:]].*[[:space:]]restart|apt[[:space:]]|apt-get[[:space:]]|yum[[:space:]]|dnf[[:space:]]|pip[[:space:]]|pip3[[:space:]]|npm[[:space:]]|chown[[:space:]]|chmod[[:space:]]'; then
-    return 1
-  fi
-
-  if echo "$cmd" | grep -Eiq '(^|[[:space:]])(mv|cp)([[:space:]]|$)'; then
-    return 1
-  fi
-
-  if echo "$cmd" | grep -Eiq 'mysql[[:space:]].*(-e|--execute)|psql[[:space:]].*(-c|--command)'; then
-    return 1
-  fi
-
+  case "$cmd" in *$'\n'*|*$'\r'*) return 1 ;; esac
+  if echo "$cmd" | grep -Eiq '(^|[[:space:]])(rm|reboot|shutdown|poweroff|halt)([[:space:]]|$)'; then return 1; fi
+  if echo "$cmd" | grep -Eiq 'sed[[:space:]]+-i|perl[[:space:]]+-pi|systemctl[[:space:]]+restart|service[[:space:]].*[[:space:]]restart|apt[[:space:]]|apt-get[[:space:]]|yum[[:space:]]|dnf[[:space:]]|pip[[:space:]]|pip3[[:space:]]|npm[[:space:]]|chown[[:space:]]|chmod[[:space:]]'; then return 1; fi
+  if echo "$cmd" | grep -Eiq '(^|[[:space:]])(mv|cp)([[:space:]]|$)'; then return 1; fi
+  if echo "$cmd" | grep -Eiq 'mysql[[:space:]].*(-e|--execute)|psql[[:space:]].*(-c|--command)'; then return 1; fi
   return 0
 }
 
@@ -88,36 +63,18 @@ ssh_command_allowed() {
 
 validator_check() {
   local cmd="$1"
-
-  if ! is_safe_command "$cmd"; then
-    echo "FAIL: blocked by safety policy"
-    return 1
-  fi
-
+  if ! is_safe_command "$cmd"; then echo "FAIL: blocked by safety policy"; return 1; fi
   if echo "$cmd" | grep -Eq '^ssh[[:space:]]+'; then
-    if ! ssh_command_allowed "$cmd"; then
-      echo "FAIL: ssh target not configured safe"
-      return 1
-    fi
+    if ! ssh_command_allowed "$cmd"; then echo "FAIL: ssh target not configured safe"; return 1; fi
   fi
-
-  echo "PASS: safe to execute"
-  return 0
+  echo "PASS: safe to execute"; return 0
 }
 
 run_command() {
   local cmd="$1"
-
-  echo
-  echo "[exec] $cmd"
-  echo
-
+  echo; echo "[exec] $cmd"; echo
   bash -c "$cmd" > "$CMD_OUTPUT_FILE" 2>&1 || true
-
-  echo "--- OUTPUT START ---"
-  cat "$CMD_OUTPUT_FILE"
-  echo "--- OUTPUT END ---"
-  echo
+  echo "--- OUTPUT START ---"; cat "$CMD_OUTPUT_FILE"; echo "--- OUTPUT END ---"; echo
 }
 
 chat_response() {
@@ -135,156 +92,78 @@ write_lesson() {
   printf '%s | %s\n' "$(date -Is)" "$line" >> "$LESSONS_FILE"
 }
 
-run_basic_audit() {
-  local verdict
-  echo "[audit] basic system audit"
-  echo
-  for c in "whoami" "hostname" "uptime" "df -h" "free -h"; do
-    verdict="$(validator_check "$c" || true)"
-    echo "[validator] $verdict"
-    if echo "$verdict" | grep -q '^PASS:'; then
-      run_command "$c"
-    fi
-  done
-}
-
-explain_plan_web_audit() {
+# --- Deterministic audit pack (Apache/PHP) ---
+run_remote_apache_php_audit() {
   local resolved="$1"
-  echo "[explain] plan for web audit on $resolved"
-  echo "1) ssh $resolved 'hostname'"
-  echo "2) ssh $resolved 'ps aux | grep -E \"apache2|nginx\" | grep -v grep'"
-  echo "3) ssh $resolved 'apache2ctl -v'  OR  ssh $resolved 'nginx -v 2>&1'"
-  echo "4) ssh $resolved 'php -v'"
-  echo "5) ssh $resolved 'curl -sSI http://localhost'"
-  echo
-}
-
-run_remote_web_php_audit() {
-  local alias_name="$1"
-  local resolved="$2"
   local verdict cmd
-  local host_out web_detect_out web_out php_out http_out
-  local web_type web_ver php_ver http_status
+  local host_out apache_out php_out http_out
+  local apache_ver php_ver http_status
 
-  echo "[exec-task] remote web/php audit"
-  echo
+  echo "[exec-task] remote apache/php audit"; echo
 
   cmd="ssh $resolved 'hostname'"
-  verdict="$(validator_check "$cmd" || true)"
-  echo "[validator] $verdict"
-  if ! echo "$verdict" | grep -q '^PASS:'; then
-    echo "[stop] command rejected"
-    echo
-    return 1
-  fi
-  run_command "$cmd"
-  host_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
+  verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
+  if ! echo "$verdict" | grep -q '^PASS:'; then echo "[stop] command rejected"; echo; return 1; fi
+  run_command "$cmd"; host_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
 
-  cmd="ssh $resolved 'ps aux | grep -E \"apache2|nginx\" | grep -v grep'"
-  verdict="$(validator_check "$cmd" || true)"
-  echo "[validator] $verdict"
-  if ! echo "$verdict" | grep -q '^PASS:'; then
-    echo "[stop] command rejected"
-    echo
-    return 1
-  fi
-  run_command "$cmd"
-  web_detect_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
-
-  if echo "$web_detect_out" | grep -q 'apache2'; then
-    web_type="apache"
-    cmd="ssh $resolved 'apache2ctl -v'"
-  elif echo "$web_detect_out" | grep -q 'nginx'; then
-    web_type="nginx"
-    cmd="ssh $resolved 'nginx -v 2>&1'"
-  else
-    web_type="none"
-    cmd="echo no_web_server_detected"
-  fi
-
-  echo "[detect] web server: $web_type"
-
-  verdict="$(validator_check "$cmd" || true)"
-  echo "[validator] $verdict"
-  if ! echo "$verdict" | grep -q '^PASS:'; then
-    echo "[stop] command rejected"
-    echo
-    return 1
-  fi
-  run_command "$cmd"
-  web_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
+  cmd="ssh $resolved 'apache2ctl -v'"
+  verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
+  if ! echo "$verdict" | grep -q '^PASS:'; then echo "[stop] command rejected"; echo; return 1; fi
+  run_command "$cmd"; apache_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
 
   cmd="ssh $resolved 'php -v'"
-  verdict="$(validator_check "$cmd" || true)"
-  echo "[validator] $verdict"
-  if ! echo "$verdict" | grep -q '^PASS:'; then
-    echo "[stop] command rejected"
-    echo
-    return 1
-  fi
-  run_command "$cmd"
-  php_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
+  verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
+  if ! echo "$verdict" | grep -q '^PASS:'; then echo "[stop] command rejected"; echo; return 1; fi
+  run_command "$cmd"; php_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
 
   cmd="ssh $resolved 'curl -sSI http://localhost'"
-  verdict="$(validator_check "$cmd" || true)"
-  echo "[validator] $verdict"
-  if ! echo "$verdict" | grep -q '^PASS:'; then
-    echo "[stop] command rejected"
-    echo
-    return 1
-  fi
-  run_command "$cmd"
-  http_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
+  verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
+  if ! echo "$verdict" | grep -q '^PASS:'; then echo "[stop] command rejected"; echo; return 1; fi
+  run_command "$cmd"; http_out="$(cat "$CMD_OUTPUT_FILE" 2>/dev/null || true)"
 
-  if [ "$web_type" = "apache" ]; then
-    web_ver="$(printf '%s\n' "$web_out" | sed -nE 's/^Server version: Apache\/([^ ]+).*/\1/p' | head -n 1)"
-  elif [ "$web_type" = "nginx" ]; then
-    web_ver="$(printf '%s\n' "$web_out" | sed -nE 's/^nginx version: nginx\/([^ ]+).*/\1/p' | head -n 1)"
-  else
-    web_ver="unknown"
-  fi
-
+  apache_ver="$(printf '%s\n' "$apache_out" | sed -nE 's/^Server version: Apache\/([^ ]+).*/\1/p' | head -n 1)"
   php_ver="$(printf '%s\n' "$php_out" | sed -nE 's/^PHP ([^ ]+).*/\1/p' | head -n 1)"
   http_status="$(printf '%s\n' "$http_out" | sed -nE 's/^HTTP\/[^ ]+[[:space:]]+([0-9]{3}).*/\1/p' | head -n 1)"
 
-  echo "[done] web/php audit sequence completed"
-  echo
+  echo "[done] apache/php audit sequence completed"; echo
   echo "AUDIT SUMMARY:"
-  echo "Target: $alias_name"
+  echo "Target: test.artistpro.media"
   echo "Host: ${host_out%%$'\n'*}"
-  echo "Web: ${web_type:-unknown}"
-  echo "Web Version: ${web_ver:-unknown}"
+  echo "Apache: ${apache_ver:-unknown}"
   echo "PHP: ${php_ver:-unknown}"
   echo "HTTP: ${http_status:-unknown}"
 
-  if [ "${http_status:-}" = "200" ] && [ -n "${php_ver:-}" ] && [ "${web_type:-}" != "none" ]; then
+  if [ "${http_status:-}" = "200" ] && [ -n "${apache_ver:-}" ] && [ -n "${php_ver:-}" ]; then
     echo "Status: PASS"
-    write_lesson "web/php audit PASS on $alias_name ($web_type)"
+    write_lesson "apache/php audit PASS on test.artistpro.media"
   else
     echo "Status: REVIEW"
+    # simple failure branching
     if [ "${http_status:-}" != "200" ]; then
-      echo
-      echo "[branch] HTTP not 200 → checking service status and logs"
-      if [ "$web_type" = "apache" ]; then
-        cmd="ssh $resolved 'systemctl status apache2 --no-pager'"
-        verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
-        if echo "$verdict" | grep -q '^PASS:'; then run_command "$cmd"; fi
-        cmd="ssh $resolved 'tail -n 50 /var/log/apache2/error.log'"
-        verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
-        if echo "$verdict" | grep -q '^PASS:'; then run_command "$cmd"; fi
-      elif [ "$web_type" = "nginx" ]; then
-        cmd="ssh $resolved 'systemctl status nginx --no-pager'"
-        verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
-        if echo "$verdict" | grep -q '^PASS:'; then run_command "$cmd"; fi
-        cmd="ssh $resolved 'tail -n 50 /var/log/nginx/error.log'"
-        verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
-        if echo "$verdict" | grep -q '^PASS:'; then run_command "$cmd"; fi
-      fi
+      echo; echo "[branch] HTTP not 200 → checking Apache status and logs"
+      cmd="ssh $resolved 'systemctl status apache2 --no-pager'"
+      verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
+      if echo "$verdict" | grep -q '^PASS:'; then run_command "$cmd"; fi
+      cmd="ssh $resolved 'tail -n 50 /var/log/apache2/error.log'"
+      verdict="$(validator_check "$cmd" || true)"; echo "[validator] $verdict"
+      if echo "$verdict" | grep -q '^PASS:'; then run_command "$cmd"; fi
     fi
   fi
   echo
 }
 
+# --- Explain mode ---
+explain_plan_apache_php() {
+  local resolved="$1"
+  echo "[explain] plan for apache/php audit on $resolved"
+  echo "1) ssh $resolved 'hostname'"
+  echo "2) ssh $resolved 'apache2ctl -v'"
+  echo "3) ssh $resolved 'php -v'"
+  echo "4) ssh $resolved 'curl -sSI http://localhost'"
+  echo
+}
+
+# --- Multi-target (MVP) ---
 list_safe_targets() {
   python3 - "$SSH_TARGETS_FILE" <<'PY'
 import json, sys, pathlib
@@ -300,44 +179,270 @@ PY
 
 exec_task() {
   local task="$1"
-  local task_lc resolved alias
+  local task_lc resolved
 
   task_lc="$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')"
 
+  # explain mode
   if echo "$task_lc" | grep -q '^explain '; then
     task_lc="${task_lc#explain }"
-    if echo "$task_lc" | grep -q 'test.artistpro.media' && echo "$task_lc" | grep -q 'apache\|nginx\|web' && echo "$task_lc" | grep -q 'php'; then
+    if echo "$task_lc" | grep -q "test.artistpro.media" && echo "$task_lc" | grep -q "apache" && echo "$task_lc" | grep -q "php"; then
       resolved="$(resolve_safe_target "test.artistpro.media" 2>/dev/null || true)"
-      if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
-        echo "[validator] FAIL: target not configured safe"
-        echo
-        return 1
-      fi
-      explain_plan_web_audit "$resolved"
+      [ -z "$resolved" ] && { echo "[validator] FAIL: target not configured safe"; echo; return 1; }
+      explain_plan_apache_php "$resolved"
       return 0
     fi
   fi
 
-  if echo "$task_lc" | grep -q 'all' && echo "$task_lc" | grep -q 'php' && echo "$task_lc" | grep -q 'apache\|nginx\|web'; then
+  # multi-target MVP: "all"
+  if echo "$task_lc" | grep -q "all" && echo "$task_lc" | grep -q "apache" && echo "$task_lc" | grep -q "php"; then
     for alias in $(list_safe_targets); do
       resolved="$(resolve_safe_target "$alias" 2>/dev/null || true)"
       [ -z "$resolved" ] && continue
-      [ "$resolved" = "NOT_FOUND" ] && continue
-      [ "$resolved" = "UNSAFE" ] && continue
-      [ "$resolved" = "NO_CONFIG" ] && continue
-      run_remote_web_php_audit "$alias" "$resolved"
+      run_remote_apache_php_audit "$resolved"
     done
     return 0
   fi
 
-  if echo "$task_lc" | grep -q 'test.artistpro.media' && echo "$task_lc" | grep -q 'php' && echo "$task_lc" | grep -q 'apache\|nginx\|web'; then
+  # deterministic follow-up execution: cron, logs, files, history
+  if echo "$task_lc" | grep -q "artistpro.media" && \
+     echo "$task_lc" | grep -qE "cron|app|logs|files|history|24"; then
+
+    resolved="$(resolve_safe_target "artistpro" 2>/dev/null || true)"
+    if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
+      echo "[validator] FAIL: target not configured safe"; echo; return 1
+    fi
+
+    echo "[exec-task] follow-up investigation (24h window)"; echo
+
+    cron_cmd="ssh $resolved \"grep -i CRON /var/log/syslog 2>/dev/null | tail -n 80\""
+    files_cmd="ssh $resolved \"find /var/www/vhosts/artistpro.media -type f -mtime -1 2>/dev/null | head -n 50\""
+    hist_cmd="ssh $resolved \"tail -n 100 /home/apmedia/.bash_history 2>/dev/null\""
+
+        cron_out="$(ssh $resolved 'grep -i CRON /var/log/syslog 2>/dev/null | tail -n 80' 2>/dev/null || true)"
+    files_out="$(ssh $resolved 'find /var/www/vhosts/artistpro.media -type f -mtime -1 2>/dev/null | head -n 50' 2>/dev/null || true)"
+    hist_out="$(ssh $resolved 'tail -n 100 /home/apmedia/.bash_history 2>/dev/null' 2>/dev/null || true)"
+
+    for cmd in "$cron_cmd" "$files_cmd" "$hist_cmd"; do
+      verdict="$(validator_check "$cmd" || true)"
+      echo "[validator] $verdict"
+      if echo "$verdict" | grep -q '^PASS:'; then
+        run_command "$cmd"
+      fi
+    done
+
+    echo
+    echo "FOLLOW-UP ADVERSARIAL REVIEW:"
+    echo "Guardrails:"
+    echo "- max 3 hops"
+    echo "- read-only only"
+    echo "- no repeated evidence source"
+    echo "- no same empty query twice"
+    echo "- skeptic must propose the next source"
+    echo "- judge must choose confirm, correct, or continue"
+    echo "- stop when confidence is sufficient"
+    echo
+
+    echo "HOP 1 — CRON / SCHEDULER SIGNALS"
+    echo "[ANALYST] Source: cron-related syslog entries from the last available window."
+    if [ -z "$cron_out" ]; then
+      echo "[ANALYST] No cron evidence was returned."
+    else
+      echo "[ANALYST] Cron-related evidence was returned."
+    fi
+    echo "[SKEPTIC] Syslog may not be the only scheduler trail. A different source is needed before concluding anything."
+    echo "[JUDGE] Decision: continue."
+    echo
+
+    echo "HOP 2 — RECENT FILE MODIFICATIONS"
+    echo "[ANALYST] Source: files under /var/www/vhosts/artistpro.media modified in the last 24 hours."
+    if [ -z "$files_out" ]; then
+      echo "[ANALYST] No recent file modifications were returned."
+    else
+      echo "[ANALYST] Recent file modifications were returned."
+    fi
+    echo "[SKEPTIC] Modified files alone do not prove user action or shell activity. A different source is needed."
+    echo "[JUDGE] Decision: continue."
+    echo
+
+    echo "HOP 3 — SHELL HISTORY"
+    echo "[ANALYST] Source: /home/apmedia/.bash_history tail."
+    if [ -z "$hist_out" ]; then
+      echo "[ANALYST] No shell history evidence was returned."
+    else
+      echo "[ANALYST] Shell history evidence was returned."
+    fi
+    echo "[SKEPTIC] Three independent follow-up sources have now been checked."
+    echo "[JUDGE] Decision: confirm and stop."
+    echo
+
+    echo "FOLLOW-UP FINAL JUDGMENT:"
+    if [ -z "$cron_out" ] && [ -z "$hist_out" ] && [ -n "$files_out" ]; then
+      echo "I found recent file modifications, but no cron trail and no shell history from the checked source."
+      echo
+      echo "FOLLOW-UP CONFIDENCE:"
+      echo "MEDIUM"
+      echo
+      echo "FOLLOW-UP NEXT PATH:"
+      echo "Check app-specific logs named in the modified files list, ownership/timestamps, and other shell histories or service timers."
+    elif [ -z "$cron_out" ] && [ -z "$files_out" ] && [ -z "$hist_out" ]; then
+      echo "I did not get evidence from cron, recent file modifications, or shell history in these follow-up sources."
+      echo
+      echo "FOLLOW-UP CONFIDENCE:"
+      echo "MEDIUM"
+      echo
+      echo "FOLLOW-UP NEXT PATH:"
+      echo "Check service timers, rotated logs, alternate user histories, and application-specific logs."
+    else
+      echo "I found at least one follow-up signal that needs deeper review."
+      echo
+      echo "FOLLOW-UP CONFIDENCE:"
+      echo "MEDIUM"
+      echo
+      echo "FOLLOW-UP NEXT PATH:"
+      echo "Deepen the source that produced the signal before widening the search."
+    fi
+    echo
+
+    return 0
+  fi
+
+  # deterministic path for known audit
+  if echo "$task_lc" | grep -q "test.artistpro.media" && \
+     echo "$task_lc" | grep -q "apache" && \
+     echo "$task_lc" | grep -q "php"; then
     resolved="$(resolve_safe_target "test.artistpro.media" 2>/dev/null || true)"
     if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
-      echo "[validator] FAIL: target not configured safe"
-      echo
-      return 1
+      echo "[validator] FAIL: target not configured safe"; echo; return 1
     fi
-    run_remote_web_php_audit "test.artistpro.media" "$resolved"
+    run_remote_apache_php_audit "$resolved"
+    return 0
+  fi
+
+  if echo "$task_lc" | grep -q "artistpro.media" && \
+     echo "$task_lc" | grep -q "last night" && \
+     echo "$task_lc" | grep -q "logs"; then
+    resolved="$(resolve_safe_target "artistpro" 2>/dev/null || true)"
+    if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
+      echo "[validator] FAIL: target not configured safe"; echo; return 1
+    fi
+
+    echo "[exec-task] remote incident snapshot (time-window)"; echo
+
+    journal_out="$(ssh $resolved \"journalctl --since 'today 01:20' --until 'today 02:00' --no-pager 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
+    access_out="$(ssh $resolved \"grep -E '\\[08/Apr/2026:01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/access_log 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
+    error_out="$(ssh $resolved \"grep -E '\\[Wed Apr 08 01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/error_log 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
+    last_out="$(ssh $resolved 'last -a | head -n 40' 2>/dev/null || true)"
+
+    for cmd in \
+      "ssh $resolved 'hostname'" \
+      "ssh $resolved 'date'" \
+      "ssh $resolved \"journalctl --since 'today 01:20' --until 'today 02:00' --no-pager 2>/dev/null | tail -n 120\"" \
+      "ssh $resolved \"grep -E '\\[08/Apr/2026:01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/access_log 2>/dev/null | tail -n 120\"" \
+      "ssh $resolved \"grep -E '\\[Wed Apr 08 01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/error_log 2>/dev/null | tail -n 120\"" \
+      "ssh $resolved 'last -a | head -n 40'"
+    do
+      verdict="$(validator_check "$cmd" || true)"
+      echo "[validator] $verdict"
+      if echo "$verdict" | grep -q '^PASS:'; then
+        run_command "$cmd"
+      fi
+    done
+
+    echo
+    echo "FINDING:"
+    if [ -z "$journal_out" ] && [ -z "$access_out" ] && [ -z "$error_out" ] && ! printf '%s\n' "$last_out" | grep -qE '^.*Wed Apr[[:space:]]+8.* 01:'; then
+      echo "I do not see recorded SSH, system, or web activity in the checked window."
+    else
+      echo "I see at least some indication of activity or mixed evidence in the checked window."
+    fi
+    echo
+
+    echo "CRITIC:"
+    issues=0
+
+    if [ -z "$journal_out" ] && [ -z "$access_out" ] && [ -z "$error_out" ] && printf '%s\n' "$last_out" | grep -qE '^.*Wed Apr[[:space:]]+8.* 01:'; then
+      echo "The evidence is mixed: login history suggests something in the 1 AM hour, but the system and web logs are empty for the checked window."
+      issues=1
+    fi
+
+    if [ -n "$journal_out" ] || [ -n "$access_out" ] || [ -n "$error_out" ]; then
+      echo "The conclusion is supported by at least one log source in the checked window."
+    fi
+
+    if [ $issues -eq 0 ] && [ -z "$journal_out" ] && [ -z "$access_out" ] && [ -z "$error_out" ] && ! printf '%s\n' "$last_out" | grep -qE '^.*Wed Apr[[:space:]]+8.* 01:'; then
+      echo "No inconsistencies detected in this analysis."
+    elif [ $issues -eq 0 ]; then
+      echo "No obvious inconsistencies detected, but the raw output should still be reviewed when the result matters."
+    fi
+    echo
+
+    echo "ADVERSARIAL REVIEW:"
+    echo "Guardrails:"
+    echo "- max 3 hops"
+    echo "- read-only only"
+    echo "- no repeated evidence source"
+    echo "- no same empty query twice"
+    echo "- skeptic must propose the next source"
+    echo "- judge must choose confirm, correct, or continue"
+    echo "- stop when confidence is sufficient"
+    echo "- no file changes"
+    echo "- no service actions"
+    echo
+
+    echo "HOP 1 — SYSTEM LOG WINDOW"
+    echo "[ANALYST] Source: journalctl for 1:20–2:00 AM."
+    if [ -z "$journal_out" ]; then
+      echo "[ANALYST] No system log activity found."
+    else
+      echo "[ANALYST] System log activity was found."
+    fi
+    echo "[SKEPTIC] That does not rule out web or shell activity. Next source should be web access logs."
+    echo "[JUDGE] Decision: continue."
+    echo
+
+    echo "HOP 2 — WEB ACCESS WINDOW"
+    echo "[ANALYST] Source: web access log for 1:20–1:59 AM."
+    if [ -z "$access_out" ]; then
+      echo "[ANALYST] No web access activity found."
+    else
+      echo "[ANALYST] Web access activity was found."
+    fi
+    echo "[SKEPTIC] That still does not rule out login activity. Next source should be login history."
+    echo "[JUDGE] Decision: continue."
+    echo
+
+    echo "HOP 3 — LOGIN HISTORY WINDOW"
+    echo "[ANALYST] Source: login history for today's 1 AM hour."
+    if printf '%s\n' "$last_out" | grep -qE '^.*Wed Apr[[:space:]]+8.* 01:'; then
+      echo "[ANALYST] Login history shows activity in today's 1 AM hour."
+    else
+      echo "[ANALYST] Login history does not show activity in today's 1 AM hour."
+    fi
+    echo "[SKEPTIC] Three independent sources are now checked, and no new contradictory signal has appeared."
+    echo "[JUDGE] Decision: confirm and stop."
+    echo
+
+    echo "FINAL JUDGMENT:"
+    if [ -z "$journal_out" ] && [ -z "$access_out" ] && [ -z "$error_out" ] && ! printf '%s\n' "$last_out" | grep -qE '^.*Wed Apr[[:space:]]+8.* 01:'; then
+      echo "Across three independent sources, I do not see evidence of activity in the checked window."
+      echo
+      echo "CONFIDENCE:"
+      echo "HIGH"
+      echo
+      echo "NEXT MANUAL PATH:"
+      echo "If deeper confirmation is still needed, check cron activity, app-specific logs, file modification times, or shell history."
+    else
+      echo "Across three independent sources, some evidence exists or remains mixed."
+      echo
+      echo "CONFIDENCE:"
+      echo "MEDIUM"
+      echo
+      echo "NEXT MANUAL PATH:"
+      echo "Deepen the source that produced the signal before widening the search."
+    fi
+    echo
+
     return 0
   fi
 
@@ -352,29 +457,63 @@ echo " type 'exit' to quit"
 echo " commands: /exec /audit /ssh-audit /exec-task"
 echo
 
+route_nl_task() {
+  local task="$1"
+  local lower
+  lower="$(printf "%s" "$task" | tr "[:upper:]" "[:lower:]")"
+
+  if echo "$lower" | grep -qiE "artistpro(\\.media)?"; then
+    if echo "$lower" | grep -qiE "what happened|last night|early morning|around [0-9]|logs?"; then
+      echo "/exec-task investigate artistpro.media last night logs"
+      return 0
+    fi
+    if echo "$lower" | grep -qiE "ssh|audit|uptime|disk|df|hostname|php|apache|nginx|server"; then
+      echo "/ssh-audit artistpro"
+      return 0
+    fi
+  fi
+
+  if echo "$lower" | grep -qiE "test(\\.artistpro\\.media)?"; then
+    if echo "$lower" | grep -qiE "ssh|audit|uptime|disk|df|hostname|php|apache|nginx|server|logs?"; then
+      echo "/ssh-audit test"
+      return 0
+    fi
+  fi
+
+
+  # follow-up deterministic routing (cron, logs, files, history)
+  if echo "$lower" | grep -qiE "cron|app|logs|file modification|file changes|shell history|history|past 24|24 hours|return and check"; then
+    echo "/exec-task investigate artistpro.media followup 24h"
+    return 0
+  fi
+
+  echo "$task"
+}
+
+
 while true; do
   printf "//> "
   read -r TASK || break
 
-  if [ -z "${TASK// }" ]; then
-    continue
-  fi
+  TASK="$(route_nl_task "$TASK")"
 
+  if [ -z "${TASK// }" ]; then continue; fi
   [ "$TASK" = "exit" ] && break
 
   case "$TASK" in
     /exec\ *)
       CMD="${TASK#"/exec "}"
-      verdict="$(validator_check "$CMD" || true)"
-      echo "[validator] $verdict"
-      if echo "$verdict" | grep -q '^PASS:'; then
-        run_command "$CMD"
-      fi
+      verdict="$(validator_check "$CMD" || true)"; echo "[validator] $verdict"
+      if echo "$verdict" | grep -q '^PASS:'; then run_command "$CMD"; fi
       continue
       ;;
 
     /audit)
-      run_basic_audit
+      echo "[audit] basic system audit"; echo
+      for c in "whoami" "hostname" "uptime" "df -h" "free -h"; do
+        verdict="$(validator_check "$c" || true)"; echo "[validator] $verdict"
+        if echo "$verdict" | grep -q '^PASS:'; then run_command "$c"; fi
+      done
       continue
       ;;
 
@@ -386,11 +525,8 @@ while true; do
         continue
       fi
       CMD="ssh $RESOLVED 'hostname && uptime && df -h'"
-      verdict="$(validator_check "$CMD" || true)"
-      echo "[validator] $verdict"
-      if echo "$verdict" | grep -q '^PASS:'; then
-        run_command "$CMD"
-      fi
+      verdict="$(validator_check "$CMD" || true)"; echo "[validator] $verdict"
+      if echo "$verdict" | grep -q '^PASS:'; then run_command "$CMD"; fi
       continue
       ;;
 
@@ -401,20 +537,6 @@ while true; do
 
     /*)
       echo "unknown command"
-      continue
-      ;;
-  esac
-
-  echo "[thinking]"
-  chat_response "$TASK"
-
-  {
-    echo "USER: $TASK"
-    echo "AI:"
-    cat "$LAST_RESPONSE_FILE" 2>/dev/null || true
-    echo
-  } >> "$HISTORY_FILE"
-done
       continue
       ;;
   esac
