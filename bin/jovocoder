@@ -70,6 +70,71 @@ validator_check() {
   echo "PASS: safe to execute"; return 0
 }
 
+
+apply_patch() {
+  local desc="$1"
+  local find="$2"
+  local replace="$3"
+  local tmp
+  local backup
+
+  echo "[patch] $desc"
+  echo
+
+  if ! sudo grep -Fqx "$find" /usr/local/bin/jovocoder; then
+    echo "[patch] FAIL: exact target not found"
+    return 1
+  fi
+
+  backup="/tmp/jovocoder.applypatch.backup.$$"
+  tmp="/tmp/jovocoder.applypatch.tmp.$$"
+
+  sudo cp -a /usr/local/bin/jovocoder "$backup"
+
+  sudo python3 - "$find" "$replace" <<'PYCODE'
+from pathlib import Path
+import sys
+
+target = Path('/usr/local/bin/jovocoder')
+find = sys.argv[1]
+replace = sys.argv[2]
+
+s = target.read_text()
+count = s.count(find)
+if count != 1:
+    print(f"[patch] FAIL: expected exactly 1 match, found {count}")
+    raise SystemExit(1)
+
+target.write_text(s.replace(find, replace, 1))
+print("[patch] applied exact single replacement")
+PYCODE
+
+  if ! sudo bash -n /usr/local/bin/jovocoder; then
+    echo "[patch] FAIL: syntax error after patch; restoring backup"
+    sudo cp -a "$backup" /usr/local/bin/jovocoder
+    return 1
+  fi
+
+  sudo rm -f "$backup" "$tmp"
+  echo "[patch] OK: applied and verified"
+  echo
+}
+
+kobayashi_maru() {
+  local reason="$1"
+  echo "[kobayashi] NO_WIN_STATE"
+  echo "[kobayashi] reason: $reason"
+  echo
+  echo "No safe grounded conclusion can be made from the current evidence."
+  echo "Do not guess. Do not fabricate. Preserve system integrity."
+  echo
+  echo "Next actions:"
+  echo "- expand evidence sources"
+  echo "- check alternate logs or histories"
+  echo "- reframe the query around observable proof"
+  echo
+}
+
 run_command() {
   local cmd="$1"
   echo; echo "[exec] $cmd"; echo
@@ -457,6 +522,79 @@ echo " type 'exit' to quit"
 echo " commands: /exec /audit /ssh-audit /exec-task"
 echo
 
+
+mempalace_query() {
+  local q="$1"
+  local wing="$2"
+
+  echo "[mempalace] query: $q"
+  echo "[mempalace] wing: $wing"
+  echo
+
+  out="$(mempalace search "$q" --wing "$wing" 2>/dev/null)"
+
+  if echo "$out" | grep -q "Results for"; then
+    echo "$out"
+    return 0
+  fi
+
+  return 1
+}
+
+
+mempalace_query() {
+  local q="$1"
+  local canon_out artist_out best_match combined_out body_out overlap_found
+  local token
+
+  echo "[mempalace] query: $q"
+  echo
+
+  canon_out="$(mempalace search "$q" --wing mempalace_canon 2>/dev/null)"
+  artist_out="$(mempalace search "$q" --wing artistpro 2>/dev/null)"
+
+  combined_out="$(
+    {
+      printf '%s
+' "$canon_out"
+      printf '%s
+' "$artist_out"
+    }
+  )"
+
+  best_match="$(
+    printf '%s
+' "$combined_out" | awk '/Match:/ {print $2}' | sort -n | tail -1
+  )"
+
+  body_out="$(
+    printf '%s
+' "$combined_out" | grep -v '^  Results for: '
+  )"
+
+  overlap_found=1
+  for token in $(printf '%s
+' "$q" | tr '[:upper:]' '[:lower:]' | grep -oE '[a-z0-9._-]+' | awk 'length($0) >= 4'); do
+    if printf '%s
+' "$body_out" | tr '[:upper:]' '[:lower:]' | grep -Fqi -- "$token"; then
+      overlap_found=0
+      break
+    fi
+  done
+
+  if [ -n "$best_match" ] && awk -v m="$best_match" 'BEGIN { exit !(m > -0.65) }' && [ "$overlap_found" -eq 0 ]; then
+    printf '%s
+' "$canon_out"
+    echo
+    printf '%s
+' "$artist_out"
+    return 0
+  fi
+
+  echo "No matching evidence found."
+  return 1
+}
+
 route_nl_task() {
   local task="$1"
   local lower
@@ -487,15 +625,69 @@ route_nl_task() {
     return 0
   fi
 
-  echo "$task"
+  
+  # grounded memory recall (repos + md + logs)
+
+  # MemPalace grounded recall layer
+  if echo "$lower" | grep -qiE "what did we|recall|discussion|audit|stack|infra|remember"; then
+    echo "[mempalace] grounded recall"; echo
+
+    # search recent knowledge sources
+    results="$(find /Users/mikelawson \
+      \( -path '/Users/mikelawson/.git' -o -path '/Users/mikelawson/node_modules' -o -path '/Users/mikelawson/.cache' \) -prune -o \
+      -type f \( -name '*.md' -o -name '*.log' -o -name '*.txt' \) \
+      -mtime -30 -print 2>/dev/null | head -n 40)"
+
+    if [ -z "$results" ]; then
+      kobayashi_maru "no grounded memory in selected room"
+      return 0
+    fi
+
+    echo "[mempalace] sources:"
+    echo "$results"
+    echo
+
+    echo "[mempalace] excerpts:"
+    for f in $results; do
+      echo "--- $f ---"
+      grep -i "$lower" "$f" 2>/dev/null | head -n 5
+    done
+    echo
+
+    return 0
+  fi
+
+echo "$task"
 }
 
 
 while true; do
   printf "//> "
   read -r TASK || break
+  [ "$TASK" = "exit" ] && break
+
+  if ! echo "$TASK" | grep -q '^/'; then
+    lower_task="$(printf "%s" "$TASK" | tr "[:upper:]" "[:lower:]")"
+    if echo "$lower_task" | grep -q "portal architecture"; then
+      TASK="class-portal-router.php portal routes"
+    elif echo "$lower_task" | grep -q "^system a$"; then
+      TASK="System A"
+    elif echo "$lower_task" | grep -q "^system b$"; then
+      TASK="System B"
+    elif echo "$lower_task" | grep -q "^my stack$"; then
+      TASK="artistpro stack"
+    fi
+  fi
 
   TASK="$(route_nl_task "$TASK")"
+
+  # Memory-first enforcement (non-command input only, after NL routing)
+  if ! echo "$TASK" | grep -q '^/'; then
+    if mempalace_query "$TASK"; then
+      continue
+    fi
+  fi
+
 
   if [ -z "${TASK// }" ]; then continue; fi
   [ "$TASK" = "exit" ] && break
@@ -541,8 +733,7 @@ while true; do
       ;;
   esac
 
-  echo "[thinking]"
-  chat_response "$TASK"
+  continue
 
   {
     echo "USER: $TASK"
@@ -551,3 +742,19 @@ while true; do
     echo
   } >> "$HISTORY_FILE"
 done
+
+translate_query() {
+  local q="$1"
+
+  if echo "$q" | grep -qi "my stack"; then
+    echo "artistpro stack"
+    return
+  fi
+
+  if echo "$q" | grep -qi "what did we audit"; then
+    echo "audit"
+    return
+  fi
+
+  echo "$q"
+}
