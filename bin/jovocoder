@@ -55,7 +55,15 @@ is_safe_command() {
 
 ssh_command_allowed() {
   local cmd="$1" token target
-  token="$(echo "$cmd" | sed -nE "s/^ssh[[:space:]]+([^[:space:]]+).*/\1/p")"
+  token="$(printf "%s\n" "$cmd" | awk '{
+    for (i = 2; i <= NF; i++) {
+      if ($i ~ /^-/) {
+        continue
+      }
+      print $i
+      exit
+    }
+  }')"
   [ -z "$token" ] && return 1
   target="${token#*@}"
   resolve_safe_target "$target" >/dev/null 2>&1
@@ -270,8 +278,8 @@ exec_task() {
   fi
 
   # deterministic follow-up execution: cron, logs, files, history
-  if echo "$task_lc" | grep -q "artistpro.media" && \
-     echo "$task_lc" | grep -qE "cron|app|logs|files|history|24"; then
+  if echo "$task_lc" | grep -qE "(^|[^[:alnum:]_])(artistpro|prod|production|live)([^[:alnum:]_]|$)" && \
+     echo "$task_lc" | grep -qE "cron|app|logs|files|history|24|last night"; then
 
     resolved="$(resolve_safe_target "artistpro" 2>/dev/null || true)"
     if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
@@ -280,13 +288,13 @@ exec_task() {
 
     echo "[exec-task] follow-up investigation (24h window)"; echo
 
-    cron_cmd="ssh $resolved \"grep -i CRON /var/log/syslog 2>/dev/null | tail -n 80\""
-    files_cmd="ssh $resolved \"find /var/www/vhosts/artistpro.media -type f -mtime -1 2>/dev/null | head -n 50\""
-    hist_cmd="ssh $resolved \"tail -n 100 /home/apmedia/.bash_history 2>/dev/null\""
+    cron_cmd="ssh -n $resolved \"grep -i CRON /var/log/syslog 2>/dev/null | tail -n 80\""
+    files_cmd="ssh -n $resolved \"find /var/www/vhosts -type f -mtime -1 2>/dev/null | head -n 50\""
+    hist_cmd="ssh -n $resolved \"tail -n 100 /home/apmedia/.bash_history 2>/dev/null\""
 
-        cron_out="$(ssh $resolved 'grep -i CRON /var/log/syslog 2>/dev/null | tail -n 80' 2>/dev/null || true)"
-    files_out="$(ssh $resolved 'find /var/www/vhosts/artistpro.media -type f -mtime -1 2>/dev/null | head -n 50' 2>/dev/null || true)"
-    hist_out="$(ssh $resolved 'tail -n 100 /home/apmedia/.bash_history 2>/dev/null' 2>/dev/null || true)"
+    cron_out="$(ssh -n $resolved 'grep -i CRON /var/log/syslog 2>/dev/null | tail -n 80' 2>/dev/null || true)"
+    files_out="$(ssh -n $resolved 'find /var/www/vhosts -type f -mtime -1 2>/dev/null | head -n 50' 2>/dev/null || true)"
+    hist_out="$(ssh -n $resolved 'tail -n 100 /home/apmedia/.bash_history 2>/dev/null' 2>/dev/null || true)"
 
     for cmd in "$cron_cmd" "$files_cmd" "$hist_cmd"; do
       verdict="$(validator_check "$cmd" || true)"
@@ -595,14 +603,66 @@ mempalace_query() {
   return 1
 }
 
+translate_with_ollama() {
+  local input="$1"
+  local prompt raw first_line
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "$input"
+    return
+  fi
+
+  prompt=$(cat <<EOF
+You are a strict command translator for JovoCoder.
+
+Return exactly one line only.
+
+Allowed outputs:
+- /audit
+- /ssh-audit artistpro
+- /ssh-audit test
+- /exec-task investigate artistpro last night logs
+- /exec-task investigate artistpro followup 24h
+- PASS_THROUGH
+
+Rules:
+- Do not explain anything.
+- Do not add punctuation before or after the command.
+- Do not invent hosts, domains, usernames, IPs, or file paths.
+- Do not output any command except one from the allowed outputs above.
+- If the request is unclear, lookup-oriented, conversational, or does not map exactly to one allowed output, return PASS_THROUGH.
+
+User input:
+$input
+EOF
+)
+
+  raw="$(printf "%s" "$prompt" | ollama run mistral 2>/dev/null || true)"
+  first_line="$(printf "%s
+" "$raw" | sed -n '1p' | tr -d '
+')"
+
+  case "$first_line" in
+    "/audit"|"/ssh-audit artistpro"|"/ssh-audit test"|"/exec-task investigate artistpro last night logs"|"/exec-task investigate artistpro followup 24h")
+      echo "$first_line"
+      return
+      ;;
+    *)
+      echo "$input"
+      return
+      ;;
+  esac
+}
+
 route_nl_task() {
   local task="$1"
   local lower
   lower="$(printf "%s" "$task" | tr "[:upper:]" "[:lower:]")"
 
-  if echo "$lower" | grep -qiE "artistpro(\\.media)?"; then
+  # production / live / prod
+  if echo "$lower" | grep -qiE "(^|[^[:alnum:]_])(prod|production|live)([^[:alnum:]_]|$)"; then
     if echo "$lower" | grep -qiE "what happened|last night|early morning|around [0-9]|logs?"; then
-      echo "/exec-task investigate artistpro.media last night logs"
+      echo "/exec-task investigate artistpro last night logs"
       return 0
     fi
     if echo "$lower" | grep -qiE "ssh|audit|uptime|disk|df|hostname|php|apache|nginx|server"; then
@@ -611,53 +671,21 @@ route_nl_task() {
     fi
   fi
 
-  if echo "$lower" | grep -qiE "test(\\.artistpro\\.media)?"; then
+  # test / staging / dev / development
+  if echo "$lower" | grep -qiE "(^|[^[:alnum:]_])(test|staging|dev|development)([^[:alnum:]_]|$)"; then
     if echo "$lower" | grep -qiE "ssh|audit|uptime|disk|df|hostname|php|apache|nginx|server|logs?"; then
       echo "/ssh-audit test"
       return 0
     fi
   fi
 
-
-  # follow-up deterministic routing (cron, logs, files, history)
+  # follow-up deterministic routing
   if echo "$lower" | grep -qiE "cron|app|logs|file modification|file changes|shell history|history|past 24|24 hours|return and check"; then
-    echo "/exec-task investigate artistpro.media followup 24h"
+    echo "/exec-task investigate artistpro followup 24h"
     return 0
   fi
 
-  
-  # grounded memory recall (repos + md + logs)
-
-  # MemPalace grounded recall layer
-  if echo "$lower" | grep -qiE "what did we|recall|discussion|audit|stack|infra|remember"; then
-    echo "[mempalace] grounded recall"; echo
-
-    # search recent knowledge sources
-    results="$(find /Users/mikelawson \
-      \( -path '/Users/mikelawson/.git' -o -path '/Users/mikelawson/node_modules' -o -path '/Users/mikelawson/.cache' \) -prune -o \
-      -type f \( -name '*.md' -o -name '*.log' -o -name '*.txt' \) \
-      -mtime -30 -print 2>/dev/null | head -n 40)"
-
-    if [ -z "$results" ]; then
-      kobayashi_maru "no grounded memory in selected room"
-      return 0
-    fi
-
-    echo "[mempalace] sources:"
-    echo "$results"
-    echo
-
-    echo "[mempalace] excerpts:"
-    for f in $results; do
-      echo "--- $f ---"
-      grep -i "$lower" "$f" 2>/dev/null | head -n 5
-    done
-    echo
-
-    return 0
-  fi
-
-echo "$task"
+  echo "$task"
 }
 
 
@@ -665,6 +693,10 @@ while true; do
   printf "//> "
   read -r TASK || break
   [ "$TASK" = "exit" ] && break
+
+  if ! echo "$TASK" | grep -q '^/'; then
+    TASK="$(translate_with_ollama "$TASK")"
+  fi
 
   if ! echo "$TASK" | grep -q '^/'; then
     lower_task="$(printf "%s" "$TASK" | tr "[:upper:]" "[:lower:]")"
@@ -716,7 +748,7 @@ while true; do
         echo "[validator] FAIL: target not configured safe"
         continue
       fi
-      CMD="ssh $RESOLVED 'hostname && uptime && df -h'"
+      CMD="ssh -n $RESOLVED 'hostname && uptime && df -h'"
       verdict="$(validator_check "$CMD" || true)"; echo "[validator] $verdict"
       if echo "$verdict" | grep -q '^PASS:'; then run_command "$CMD"; fi
       continue
