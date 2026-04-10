@@ -230,7 +230,7 @@ ssh -t user@host "bash --noprofile --norc"
 
 ## Attribution
 
-JovoCoder is designed to work with MemPalace as an upstream memory layer.
+JovoCoder is designed to work with [MemPalace](https://github.com/mikelawson68/mempalace) as an upstream memory layer.
 
 When MemPalace is available, JovoCoder can use it for grounded recall and lookup.
 When MemPalace is absent, JovoCoder still functions as a local execution and audit tool.
