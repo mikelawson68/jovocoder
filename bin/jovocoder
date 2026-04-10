@@ -168,6 +168,7 @@ write_lesson() {
 # --- Deterministic audit pack (Apache/PHP) ---
 run_remote_apache_php_audit() {
   local resolved="$1"
+  local target_label="$2"
   local verdict cmd
   local host_out apache_out php_out http_out
   local apache_ver php_ver http_status
@@ -200,7 +201,7 @@ run_remote_apache_php_audit() {
 
   echo "[done] apache/php audit sequence completed"; echo
   echo "AUDIT SUMMARY:"
-  echo "Target: test.artistpro.media"
+  echo "Target: ${target_label:-unknown}"
   echo "Host: ${host_out%%$'\n'*}"
   echo "Apache: ${apache_ver:-unknown}"
   echo "PHP: ${php_ver:-unknown}"
@@ -208,7 +209,7 @@ run_remote_apache_php_audit() {
 
   if [ "${http_status:-}" = "200" ] && [ -n "${apache_ver:-}" ] && [ -n "${php_ver:-}" ]; then
     echo "Status: PASS"
-    write_lesson "apache/php audit PASS on test.artistpro.media"
+    write_lesson "apache/php audit PASS on ${target_label:-unknown}"
   else
     echo "Status: REVIEW"
     # simple failure branching
@@ -272,7 +273,7 @@ exec_task() {
     for alias in $(list_safe_targets); do
       resolved="$(resolve_safe_target "$alias" 2>/dev/null || true)"
       [ -z "$resolved" ] && continue
-      run_remote_apache_php_audit "$resolved"
+      run_remote_apache_php_audit "$resolved" "$alias"
     done
     return 0
   fi
@@ -380,41 +381,68 @@ exec_task() {
     return 0
   fi
 
-  # deterministic path for known audit
-  if echo "$task_lc" | grep -q "test.artistpro.media" && \
-     echo "$task_lc" | grep -q "apache" && \
-     echo "$task_lc" | grep -q "php"; then
-    resolved="$(resolve_safe_target "test.artistpro.media" 2>/dev/null || true)"
-    if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
-      echo "[validator] FAIL: target not configured safe"; echo; return 1
+  # deterministic diff (scoped path)
+  if echo "$task_lc" | grep -qi "\bdiff\b" &&      echo "$task_lc" | grep -qiE "(^|[^[:alnum:]_])(prod|production|live|artistpro)([^[:alnum:]_]|$)" &&      echo "$task_lc" | grep -qiE "(^|[^[:alnum:]_])(test|staging|dev|development)([^[:alnum:]_]|$)" &&      printf "%s\n" "$task" | grep -q " /"; then
+
+    path="$(printf "%s\n" "$task" | awk '{for(i=1;i<=NF;i++){if($i ~ /^\//){print $i; exit}}}')"
+    [ -z "$path" ] && { echo "[validator] FAIL: scoped diff requires an absolute path"; echo; return 1; }
+
+    prod_resolved="$(resolve_safe_target "artistpro" 2>/dev/null || true)"
+    test_resolved="$(resolve_safe_target "test" 2>/dev/null || true)"
+
+    if [ -z "$prod_resolved" ] || [ "$prod_resolved" = "NOT_FOUND" ] || [ "$prod_resolved" = "UNSAFE" ] || [ "$prod_resolved" = "NO_CONFIG" ]; then
+      echo "[validator] FAIL: prod target not configured safe"; echo; return 1
     fi
-    run_remote_apache_php_audit "$resolved"
+    if [ -z "$test_resolved" ] || [ "$test_resolved" = "NOT_FOUND" ] || [ "$test_resolved" = "UNSAFE" ] || [ "$test_resolved" = "NO_CONFIG" ]; then
+      echo "[validator] FAIL: test target not configured safe"; echo; return 1
+    fi
+
+    echo "[exec-task] diff audit: prod vs test → $path (read-only)"
+    echo
+
+    prod_list="$(ssh -n $prod_resolved "find '$path' -type f 2>/dev/null | sort" || true)"
+    test_list="$(ssh -n $test_resolved "find '$path' -type f 2>/dev/null | sort" || true)"
+
+    echo "[prod files]"
+    printf "%s\n" "$prod_list" | head -n 50
+    echo
+
+    echo "[test files]"
+    printf "%s\n" "$test_list" | head -n 50
+    echo
+
+    echo "[diff summary]"
+    diff <(printf "%s\n" "$prod_list") <(printf "%s\n" "$test_list") | head -n 100 || true
+
+    echo
+    echo "DIFF NOTE:"
+    echo "Scoped file comparison only. Use a narrower path for deeper inspection."
+    echo
+
     return 0
   fi
 
-  if echo "$task_lc" | grep -q "artistpro.media" && \
-     echo "$task_lc" | grep -q "last night" && \
-     echo "$task_lc" | grep -q "logs"; then
-    resolved="$(resolve_safe_target "artistpro" 2>/dev/null || true)"
-    if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
-      echo "[validator] FAIL: target not configured safe"; echo; return 1
+  # deterministic diff path: prod vs test
+  if echo "$task_lc" | grep -q "\bdiff\b" &&      echo "$task_lc" | grep -qE "(^|[^[:alnum:]_])(prod|production|live|artistpro)([^[:alnum:]_]|$)" &&      echo "$task_lc" | grep -qE "(^|[^[:alnum:]_])(test|staging|dev|development)([^[:alnum:]_]|$)"; then
+
+    prod_resolved="$(resolve_safe_target "artistpro" 2>/dev/null || true)"
+    test_resolved="$(resolve_safe_target "test" 2>/dev/null || true)"
+
+    if [ -z "$prod_resolved" ] || [ "$prod_resolved" = "NOT_FOUND" ] || [ "$prod_resolved" = "UNSAFE" ] || [ "$prod_resolved" = "NO_CONFIG" ]; then
+      echo "[validator] FAIL: prod target not configured safe"; echo; return 1
+    fi
+    if [ -z "$test_resolved" ] || [ "$test_resolved" = "NOT_FOUND" ] || [ "$test_resolved" = "UNSAFE" ] || [ "$test_resolved" = "NO_CONFIG" ]; then
+      echo "[validator] FAIL: test target not configured safe"; echo; return 1
     fi
 
-    echo "[exec-task] remote incident snapshot (time-window)"; echo
+    echo "[exec-task] diff audit: prod vs test (read-only)"; echo
 
-    journal_out="$(ssh $resolved \"journalctl --since 'today 01:20' --until 'today 02:00' --no-pager 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
-    access_out="$(ssh $resolved \"grep -E '\\[08/Apr/2026:01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/access_log 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
-    error_out="$(ssh $resolved \"grep -E '\\[Wed Apr 08 01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/error_log 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
-    last_out="$(ssh $resolved 'last -a | head -n 40' 2>/dev/null || true)"
+    prod_host_cmd="ssh -n $prod_resolved 'hostname && uptime && df -h'"
+    test_host_cmd="ssh -n $test_resolved 'hostname && uptime && df -h'"
+    prod_tree_cmd="ssh -n $prod_resolved 'find /var/www/vhosts -maxdepth 2 -type d 2>/dev/null | sort | head -n 200'"
+    test_tree_cmd="ssh -n $test_resolved 'find /var/www/vhosts -maxdepth 2 -type d 2>/dev/null | sort | head -n 200'"
 
-    for cmd in \
-      "ssh $resolved 'hostname'" \
-      "ssh $resolved 'date'" \
-      "ssh $resolved \"journalctl --since 'today 01:20' --until 'today 02:00' --no-pager 2>/dev/null | tail -n 120\"" \
-      "ssh $resolved \"grep -E '\\[08/Apr/2026:01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/access_log 2>/dev/null | tail -n 120\"" \
-      "ssh $resolved \"grep -E '\\[Wed Apr 08 01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/error_log 2>/dev/null | tail -n 120\"" \
-      "ssh $resolved 'last -a | head -n 40'"
-    do
+    for cmd in "$prod_host_cmd" "$test_host_cmd" "$prod_tree_cmd" "$test_tree_cmd"; do
       verdict="$(validator_check "$cmd" || true)"
       echo "[validator] $verdict"
       if echo "$verdict" | grep -q '^PASS:'; then
@@ -423,97 +451,9 @@ exec_task() {
     done
 
     echo
-    echo "FINDING:"
-    if [ -z "$journal_out" ] && [ -z "$access_out" ] && [ -z "$error_out" ] && ! printf '%s\n' "$last_out" | grep -qE '^.*Wed Apr[[:space:]]+8.* 01:'; then
-      echo "I do not see recorded SSH, system, or web activity in the checked window."
-    else
-      echo "I see at least some indication of activity or mixed evidence in the checked window."
-    fi
-    echo
-
-    echo "CRITIC:"
-    issues=0
-
-    if [ -z "$journal_out" ] && [ -z "$access_out" ] && [ -z "$error_out" ] && printf '%s\n' "$last_out" | grep -qE '^.*Wed Apr[[:space:]]+8.* 01:'; then
-      echo "The evidence is mixed: login history suggests something in the 1 AM hour, but the system and web logs are empty for the checked window."
-      issues=1
-    fi
-
-    if [ -n "$journal_out" ] || [ -n "$access_out" ] || [ -n "$error_out" ]; then
-      echo "The conclusion is supported by at least one log source in the checked window."
-    fi
-
-    if [ $issues -eq 0 ] && [ -z "$journal_out" ] && [ -z "$access_out" ] && [ -z "$error_out" ] && ! printf '%s\n' "$last_out" | grep -qE '^.*Wed Apr[[:space:]]+8.* 01:'; then
-      echo "No inconsistencies detected in this analysis."
-    elif [ $issues -eq 0 ]; then
-      echo "No obvious inconsistencies detected, but the raw output should still be reviewed when the result matters."
-    fi
-    echo
-
-    echo "ADVERSARIAL REVIEW:"
-    echo "Guardrails:"
-    echo "- max 3 hops"
-    echo "- read-only only"
-    echo "- no repeated evidence source"
-    echo "- no same empty query twice"
-    echo "- skeptic must propose the next source"
-    echo "- judge must choose confirm, correct, or continue"
-    echo "- stop when confidence is sufficient"
-    echo "- no file changes"
-    echo "- no service actions"
-    echo
-
-    echo "HOP 1 — SYSTEM LOG WINDOW"
-    echo "[ANALYST] Source: journalctl for 1:20–2:00 AM."
-    if [ -z "$journal_out" ]; then
-      echo "[ANALYST] No system log activity found."
-    else
-      echo "[ANALYST] System log activity was found."
-    fi
-    echo "[SKEPTIC] That does not rule out web or shell activity. Next source should be web access logs."
-    echo "[JUDGE] Decision: continue."
-    echo
-
-    echo "HOP 2 — WEB ACCESS WINDOW"
-    echo "[ANALYST] Source: web access log for 1:20–1:59 AM."
-    if [ -z "$access_out" ]; then
-      echo "[ANALYST] No web access activity found."
-    else
-      echo "[ANALYST] Web access activity was found."
-    fi
-    echo "[SKEPTIC] That still does not rule out login activity. Next source should be login history."
-    echo "[JUDGE] Decision: continue."
-    echo
-
-    echo "HOP 3 — LOGIN HISTORY WINDOW"
-    echo "[ANALYST] Source: login history for today's 1 AM hour."
-    if printf '%s\n' "$last_out" | grep -qE '^.*Wed Apr[[:space:]]+8.* 01:'; then
-      echo "[ANALYST] Login history shows activity in today's 1 AM hour."
-    else
-      echo "[ANALYST] Login history does not show activity in today's 1 AM hour."
-    fi
-    echo "[SKEPTIC] Three independent sources are now checked, and no new contradictory signal has appeared."
-    echo "[JUDGE] Decision: confirm and stop."
-    echo
-
-    echo "FINAL JUDGMENT:"
-    if [ -z "$journal_out" ] && [ -z "$access_out" ] && [ -z "$error_out" ] && ! printf '%s\n' "$last_out" | grep -qE '^.*Wed Apr[[:space:]]+8.* 01:'; then
-      echo "Across three independent sources, I do not see evidence of activity in the checked window."
-      echo
-      echo "CONFIDENCE:"
-      echo "HIGH"
-      echo
-      echo "NEXT MANUAL PATH:"
-      echo "If deeper confirmation is still needed, check cron activity, app-specific logs, file modification times, or shell history."
-    else
-      echo "Across three independent sources, some evidence exists or remains mixed."
-      echo
-      echo "CONFIDENCE:"
-      echo "MEDIUM"
-      echo
-      echo "NEXT MANUAL PATH:"
-      echo "Deepen the source that produced the signal before widening the search."
-    fi
+    echo "DIFF NOTE:"
+    echo "This is a read-only structural comparison."
+    echo "For deeper diffs, add a scoped file/path-specific task."
     echo
 
     return 0
@@ -623,6 +563,7 @@ Allowed outputs:
 - /ssh-audit test
 - /exec-task investigate artistpro last night logs
 - /exec-task investigate artistpro followup 24h
+- /exec-task diff prod test
 - PASS_THROUGH
 
 Rules:
@@ -643,7 +584,7 @@ EOF
 ')"
 
   case "$first_line" in
-    "/audit"|"/ssh-audit artistpro"|"/ssh-audit test"|"/exec-task investigate artistpro last night logs"|"/exec-task investigate artistpro followup 24h")
+    "/audit"|"/ssh-audit artistpro"|"/ssh-audit test"|"/exec-task investigate artistpro last night logs"|"/exec-task investigate artistpro followup 24h"|"/exec-task diff prod test")
       echo "$first_line"
       return
       ;;
@@ -658,6 +599,11 @@ route_nl_task() {
   local task="$1"
   local lower
   lower="$(printf "%s" "$task" | tr "[:upper:]" "[:lower:]")"
+
+  if echo "$lower" | grep -q '^/exec-task '; then
+    echo "$task"
+    return 0
+  fi
 
   # production / live / prod
   if echo "$lower" | grep -qiE "(^|[^[:alnum:]_])(prod|production|live)([^[:alnum:]_]|$)"; then
@@ -682,6 +628,12 @@ route_nl_task() {
   # follow-up deterministic routing
   if echo "$lower" | grep -qiE "cron|app|logs|file modification|file changes|shell history|history|past 24|24 hours|return and check"; then
     echo "/exec-task investigate artistpro followup 24h"
+    return 0
+  fi
+
+  # diff routing
+  if echo "$lower" | grep -qi "\bdiff\b" &&      echo "$lower" | grep -qiE "(^|[^[:alnum:]_])(prod|production|live|artistpro)([^[:alnum:]_]|$)" &&      echo "$lower" | grep -qiE "(^|[^[:alnum:]_])(test|staging|dev|development)([^[:alnum:]_]|$)"; then
+    echo "/exec-task diff prod test"
     return 0
   fi
 
