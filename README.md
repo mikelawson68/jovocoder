@@ -12,246 +12,180 @@
 
 # JovoCoder
 
-A local-first AI execution engine that **doesn’t just remember — it acts.**
+JovoCoder is a local-first command runner and task router for grounded, read-safe infrastructure work.
 
-Built on top of MemPalace by Milla Jovovich & Ben Sigman, JovoCoder turns memory into a **safe, controlled, real-world operator system**.
-
----
-
-## The Breakthrough
-
-MemPalace solved memory.
-
-JovoCoder solves what comes next:
-
-What do you *do* with perfect recall?
-
-Memory without execution is still friction.
-
-What was missing:
-- controlled execution  
-- safe command loops  
-- validation before action  
-- real-world system interaction  
-
-JovoCoder is that missing layer.
+It can sit on top of MemPalace when a memory layer is available, but it can still run its core execution and audit paths without MemPalace.
 
 ---
 
-## The Real Problem
+## What JovoCoder Is
 
-Modern AI tools:
-- forget context  
-- hallucinate success  
-- ignore constraints  
-- break production systems  
-- force you to repeat yourself endlessly  
+JovoCoder is not just a chat interface.
 
-You don’t just lose time.
+It is a shell-driven operator layer that takes input, routes it, validates it, and then either:
 
-You lose control.
+- executes a safe command
+- runs a predefined audit path
+- performs a task-oriented execution loop
+- or uses MemPalace for grounded recall when that memory layer is available
 
----
-
-## What JovoCoder Actually Is
-
-JovoCoder is not a chatbot.
-
-It is:
-
-TASK → planner → validator → execution → output → interpretation → repeat
-
-A closed-loop system that:
-
-- executes real commands  
-- validates before running anything  
-- operates on real infrastructure  
-- produces verifiable results  
+In practice, it is a controlled interface for local and remote operational work.
 
 ---
 
-## What It Does
+## What “Built on Top of MemPalace” Means
 
-- Executes local and remote commands safely  
-- Runs SSH-based audits automatically  
-- Validates commands before execution  
-- Detects real system state (Apache, nginx, PHP, etc.)  
-- Produces structured audit summaries  
-- Writes lessons learned for future runs  
-- Operates entirely local-first (no APIs required)  
+MemPalace is the memory and retrieval layer.
 
----
+When MemPalace is present, JovoCoder can use it to:
+- recall grounded notes and system context
+- answer memory-style queries
+- route some natural-language prompts into evidence-backed lookups
 
-## Example
+JovoCoder does **not** require MemPalace for its core execution paths.
 
-/exec-task audit test.artistpro.media for apache and php health
+Its execution features such as:
+- `/exec`
+- `/audit`
+- `/ssh-audit`
+- `/exec-task`
 
-Output:
+can still function independently, as long as the local runtime, shell environment, SSH configuration, and target definitions are in place.
 
-AUDIT SUMMARY:  
-Target: test.artistpro.media  
-Host: dreamy-hermann...  
-Web: apache  
-Web Version: 2.4.52  
-PHP: 8.1.2  
-HTTP: 200  
-Status: PASS  
+So the relationship is:
+
+- **MemPalace** = optional memory and retrieval layer
+- **JovoCoder** = routing, validation, execution, and audit layer
+- **Ollama** = optional local model runtime used for interpretation or task assistance where configured
 
 ---
 
-## How It Works
+## How It Can Run Without MemPalace
 
-MemPalace → memory + retrieval  
-JovoCoder → execution + validation loop  
-Ollama → local model runtime  
+If MemPalace is unavailable, JovoCoder can still operate as an execution tool.
 
----
+That includes:
+- running direct commands
+- performing local audits
+- executing SSH-based checks against configured safe targets
+- handling task flows that resolve to deterministic execution paths
 
-## Features
+What you lose without MemPalace is the memory-backed recall layer, not the operator layer.
 
-- Local-first (no cloud required)  
-- Zero API usage  
-- Deterministic execution  
-- SSH automation with key auth  
-- Command validation (safety gating)  
-- Web server detection (Apache / nginx)  
-- Multi-target auditing  
-- Explain mode (plan without execution)  
-- Lessons learned write-back  
+In other words:
 
----
-
-## Install
-
-```bash
-bash scripts/install.sh
-bash scripts/verify.sh
-```
-
----
-
-## Run
-
-```bash
-jovocoder
-```
-
----
-
-## Core Commands
-
-```
-/exec <command>
-/audit
-/ssh-audit <target>
-/exec-task <task>
-/exec-task explain <task>
-```
-
----
-
-## Execution Philosophy
-
-- One command at a time  
-- Read-only by default  
-- No production writes  
-- No destructive operations  
-- Stop on mismatch  
-- Validate before execution  
-- Never hallucinate success  
-
----
-
-## Optional: Auto-Launch on SSH Login
-
-```bash
-echo '
-# auto-start jovocoder for interactive ssh
-if [[ $- == *i* ]]; then
-  if command -v jovocoder >/dev/null 2>&1; then
-    jovocoder
-    exit
-  fi
-fi
-' >> ~/.bashrc
-```
-
-To bypass auto-launch:
-
-```bash
-ssh -t user@host "bash --noprofile --norc"
-```
-
----
-
-## Attribution
-
-JovoCoder is built on top of MemPalace.
-
-MemPalace was created by Milla Jovovich & Ben Sigman and provides the memory layer.
-
-JovoCoder adds execution, validation, and orchestration.
-
----
-
-## Status
-
-v0.2.0 — Execution Engine Release
-
-This is the version where JovoCoder stops being an assistant  
-and becomes an operator.- operates on real infrastructure  
-- produces verifiable results  
+- without MemPalace, JovoCoder is still a useful execution and audit tool
+- with MemPalace, it gains grounded recall and evidence-aware lookup behavior
 
 ---
 
 ## What It Does
 
-- Executes local and remote commands safely  
-- Runs SSH-based audits automatically  
-- Validates commands before execution  
-- Detects real system state (Apache, nginx, PHP, etc.)  
-- Produces structured audit summaries  
-- Writes lessons learned for future runs  
-- Operates entirely local-first (no APIs required)  
+- Executes local commands through a validated path
+- Runs SSH-based audits against configured targets
+- Routes some natural-language prompts into audit or task commands
+- Validates commands before execution
+- Detects real system state such as host, uptime, disk, and web stack details
+- Produces verifiable command output
+- Stays local-first and shell-driven
+
+---
+
+## What It Does Not Try to Be
+
+JovoCoder is not a general autonomous agent that should improvise across unknown systems.
+
+It is designed for:
+- controlled execution
+- predictable routing
+- grounded operational work
+- safe read-focused infrastructure checks
+
+The goal is not “maximum autonomy.”
+The goal is useful automation without losing control.
+
+---
+
+## Execution Model
+
+The basic flow is:
+
+`input → route → validate → execute → inspect output`
+
+Depending on configuration, a prompt may go through one of three paths:
+
+1. **Direct command path**  
+   Explicit commands such as `/exec` or `/audit`
+
+2. **Task path**  
+   Structured task execution through `/exec-task`
+
+3. **Memory path**  
+   Grounded lookup through MemPalace, when available
+
+This separation matters because it keeps memory, routing, and execution from collapsing into one opaque step.
 
 ---
 
 ## Example
 
+```text
 /exec-task audit test.artistpro.media for apache and php health
+```
 
-Output:
+Possible output:
 
+```text
 AUDIT SUMMARY:
-Target: test.artistpro.media  
-Host: dreamy-hermann...  
-Web: apache  
-Web Version: 2.4.52  
-PHP: 8.1.2  
-HTTP: 200  
-Status: PASS  
+Target: test.artistpro.media
+Host: dreamy-hermann...
+Web: apache
+Web Version: 2.4.52
+PHP: 8.1.2
+HTTP: 200
+Status: PASS
+```
 
 ---
 
-## How It Works
+## Core Commands
 
-MemPalace → memory + retrieval  
-JovoCoder → execution + validation loop  
-Ollama → local model runtime  
+```text
+/exec <command>
+/audit
+/ssh-audit <target>
+/exec-task <task>
+/exec-task explain <task>
+```
 
 ---
 
 ## Features
 
-- Local-first (no cloud required)  
-- Zero API usage  
-- Deterministic execution  
-- SSH automation with key auth  
-- Command validation (safety gating)  
-- Web server detection (Apache / nginx)  
-- Multi-target auditing  
-- Explain mode (plan without execution)  
-- Lessons learned write-back  
+- Local-first operation
+- No API requirement for core shell and audit behavior
+- Read-safe command validation
+- SSH automation using configured safe targets
+- Natural-language routing for certain audit/task prompts
+- Web stack detection for remote audits
+- Optional memory-backed recall through MemPalace
+- Optional local-model support through Ollama
+
+---
+
+## Safety Model
+
+JovoCoder is designed around constrained execution.
+
+Principles:
+- one step at a time
+- validate before execution
+- prefer read-only paths
+- avoid destructive operations
+- do not invent results
+- surface real command output
+
+It is meant to reduce operational guesswork, not hide it.
 
 ---
 
@@ -269,30 +203,6 @@ bash scripts/verify.sh
 ```bash
 jovocoder
 ```
-
----
-
-## Core Commands
-
-```
-/exec <command>
-/audit
-/ssh-audit <target>
-/exec-task <task>
-/exec-task explain <task>
-```
-
----
-
-## Execution Philosophy
-
-- One command at a time  
-- Read-only by default  
-- No production writes  
-- No destructive operations  
-- Stop on mismatch  
-- Validate before execution  
-- Never hallucinate success  
 
 ---
 
@@ -320,17 +230,21 @@ ssh -t user@host "bash --noprofile --norc"
 
 ## Attribution
 
-JovoCoder is built on top of MemPalace.
+JovoCoder is designed to work with MemPalace as an upstream memory layer.
 
-MemPalace was created by Milla Jovovich & Ben Sigman and provides the memory layer.
+When MemPalace is available, JovoCoder can use it for grounded recall and lookup.
+When MemPalace is absent, JovoCoder still functions as a local execution and audit tool.
 
-JovoCoder adds execution, validation, and orchestration.
+MemPalace attribution should remain with its original authors and project materials.
 
 ---
 
 ## Status
 
-v0.2.0 — Execution Engine Release
+**v0.2.0 — Execution Engine Release**
 
-This is the version where JovoCoder stops being an assistant  
-and becomes an operator.
+This version establishes JovoCoder as a practical local operator layer with:
+- validated execution
+- SSH audit support
+- natural-language routing
+- optional MemPalace-backed recall
