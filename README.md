@@ -137,7 +137,7 @@ Possible output:
 
 ```text
 AUDIT SUMMARY:
-Target: test.artistpro.media
+Target: EXAMPLE.SITE
 Host: dreamy-hermann...
 Web: apache
 Web Version: 2.4.52
