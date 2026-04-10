@@ -1,57 +1,73 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN_DIR="${HOME}/bin"
-MEM_DIR="${HOME}/.mempalace"
+echo "Installing JovoCoder..."
 
-echo "Installing JovoCoder from: $ROOT_DIR"
+# Detect OS
+OS="$(uname -s)"
 
-command -v python3 >/dev/null 2>&1 || { echo "missing python3"; exit 1; }
-command -v bash >/dev/null 2>&1 || { echo "missing bash"; exit 1; }
-command -v ollama >/dev/null 2>&1 || {
-  echo "missing ollama"
-  echo "install Ollama first, then re-run this script"
-  exit 1
-}
-command -v mempalace >/dev/null 2>&1 || {
-  echo "missing mempalace"
-  echo "install MemPalace first, then re-run this script"
-  exit 1
+# Check for Homebrew (macOS)
+install_brew() {
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "Homebrew not found. Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  fi
 }
 
-mkdir -p "$BIN_DIR"
-mkdir -p "$MEM_DIR"
+# Install Ollama if missing
+install_ollama() {
+  if command -v ollama >/dev/null 2>&1; then
+    echo "Ollama already installed"
+    return
+  fi
 
-install -m 0755 "$ROOT_DIR/bin/jovocoder" "$BIN_DIR/jovocoder"
+  echo
+  echo "Ollama not found."
 
-touch "$MEM_DIR/mp-agent-history.txt"
-touch "$MEM_DIR/mp-agent-tasks.jsonl"
-touch "$MEM_DIR/mp-agent-memory.log"
+  read -p "Install Ollama now? (y/n): " choice
 
-if [ ! -f "$MEM_DIR/identity.txt" ]; then
-  cat > "$MEM_DIR/identity.txt" << 'EOT'
-Local-first AI runtime.
-Use memory and retrieval as authoritative context when available.
-Prefer safe, verifiable actions.
-Do not hallucinate success.
-EOT
+  if [[ "$choice" != "y" ]]; then
+    echo "
+Install Ollama manually:
+  https://ollama.com/download
+Then re-run install."
+    exit 1
+  fi
+
+  if [[ "$OS" == "Darwin" ]]; then
+    install_brew
+    brew install ollama
+  else
+    curl -fsSL https://ollama.com/install.sh | sh
+  fi
+
+  echo
+  echo "Ollama installed."
+  echo "Start it with:"
+  echo "  ollama serve"
+  echo
+}
+
+# Ensure ollama is installed
+install_ollama
+
+# Check if ollama is running
+if ! pgrep -x "ollama" >/dev/null 2>&1; then
+  echo "Ollama is not running."
+  echo "Run: ollama serve"
+  exit 1
 fi
 
-echo
-echo "Install complete."
-echo "Binary installed to: $BIN_DIR/jovocoder"
+# Install jovocoder binary
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+sudo cp -a "$SCRIPT_DIR/bin/jovocoder" /usr/local/bin/jovocoder
+sudo chmod +x /usr/local/bin/jovocoder
+
 echo
 
-case ":$PATH:" in
-  *":$BIN_DIR:"*)
-    echo "Run with: jovocoder"
-    ;;
-  *)
-    echo "$BIN_DIR is not currently in PATH."
-    echo "Run with: $BIN_DIR/jovocoder"
-    echo
-    echo "To add it for future shells:"
-    echo "  echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> \"\$HOME/.bashrc\""
-    ;;
-esac
+echo "JovoCoder installed successfully."
+echo "Run it with:"
+echo "  jovocoder"
+echo
+
