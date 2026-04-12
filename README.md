@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/jovocoder-source.png" alt="JovoCoder Logo" width="300"/>
+  <img src="docs/logo.png" alt="Nomad Logo" width="300"/>
 </p>
 
 <p align="center">
@@ -10,72 +10,23 @@
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" />
 </p>
 
-# JovoCoder
+# Nomad
 
-JovoCoder is a local-first command runner and task router for grounded, read-safe infrastructure work.
-
-It can sit on top of MemPalace when a memory layer is available, but it can still run its core execution and audit paths without MemPalace.
+Nomad is an autonomous infrastructure orchestrator for grounded, read-safe work.
 
 ---
 
-## What JovoCoder Is
+## What Nomad Is
 
-JovoCoder is not just a chat interface.
+Nomad is not just a chat interface.
 
 It is a shell-driven operator layer that takes input, routes it, validates it, and then either:
 
 - executes a safe command
 - runs a predefined audit path
 - performs a task-oriented execution loop
-- or uses MemPalace for grounded recall when that memory layer is available
 
 In practice, it is a controlled interface for local and remote operational work.
-
----
-
-## What “Built on Top of MemPalace” Means
-
-MemPalace is the memory and retrieval layer.
-
-When MemPalace is present, JovoCoder can use it to:
-- recall grounded notes and system context
-- answer memory-style queries
-- route some natural-language prompts into evidence-backed lookups
-
-JovoCoder does **not** require MemPalace for its core execution paths.
-
-Its execution features such as:
-- `/exec`
-- `/audit`
-- `/ssh-audit`
-- `/exec-task`
-
-can still function independently, as long as the local runtime, shell environment, SSH configuration, and target definitions are in place.
-
-So the relationship is:
-
-- **MemPalace** = optional memory and retrieval layer
-- **JovoCoder** = routing, validation, execution, and audit layer
-- **Ollama** = optional local model runtime used for interpretation or task assistance where configured
-
----
-
-## How It Can Run Without MemPalace
-
-If MemPalace is unavailable, JovoCoder can still operate as an execution tool.
-
-That includes:
-- running direct commands
-- performing local audits
-- executing SSH-based checks against configured safe targets
-- handling task flows that resolve to deterministic execution paths
-
-What you lose without MemPalace is the memory-backed recall layer, not the operator layer.
-
-In other words:
-
-- without MemPalace, JovoCoder is still a useful execution and audit tool
-- with MemPalace, it gains grounded recall and evidence-aware lookup behavior
 
 ---
 
@@ -93,7 +44,7 @@ In other words:
 
 ## What It Does Not Try to Be
 
-JovoCoder is not a general autonomous agent that should improvise across unknown systems.
+Nomad is not a general autonomous agent that should improvise across unknown systems.
 
 It is designed for:
 - controlled execution
@@ -120,17 +71,15 @@ Depending on configuration, a prompt may go through one of three paths:
 2. **Task path**  
    Structured task execution through `/exec-task`
 
-3. **Memory path**  
-   Grounded lookup through MemPalace, when available
-
-This separation matters because it keeps memory, routing, and execution from collapsing into one opaque step.
+3. **Decision path**
+   Structured execution through `/decision`
 
 ---
 
 ## Example
 
 ```text
-/exec-task audit test.artistpro.media for apache and php health
+/exec-task audit example-target for apache and php health
 ```
 
 Possible output:
@@ -150,13 +99,34 @@ Status: PASS
 
 ## Core Commands
 
+Plain-form commands are preferred:
+
 ```text
-/exec <command>
-/audit
-/ssh-audit <target>
-/exec-task <task>
-/exec-task explain <task>
+exec <command>
+audit
+ssh-audit <target>
+exec-task <task>
+workflow <name>
+decision <name>
+run show <run_id>
+run resume <run_id>
+whoami
+models list
+models recommend
+models plan-install <model_id>
+models update <model_id>
+models discover
+bootstrap plan
+bootstrap install
+approve <run_id>
+deny <run_id>
+memory status
+memory mode
+memory plan-install mempalace
+memory backend-test
 ```
+
+Slash-prefixed forms remain available as compatibility aliases.
 
 ---
 
@@ -168,14 +138,13 @@ Status: PASS
 - SSH automation using configured safe targets
 - Natural-language routing for certain audit/task prompts
 - Web stack detection for remote audits
-- Optional memory-backed recall through MemPalace
 - Optional local-model support through Ollama
 
 ---
 
 ## Safety Model
 
-JovoCoder is designed around constrained execution.
+Nomad is designed around constrained execution.
 
 Principles:
 - one step at a time
@@ -189,19 +158,118 @@ It is meant to reduce operational guesswork, not hide it.
 
 ---
 
-## Install
+## Installation
+
+NOMAD is macOS-first and installable from this repository:
 
 ```bash
-bash scripts/install.sh
-bash scripts/verify.sh
+bash scripts/install-nomad.sh
 ```
+
+The installer:
+
+- checks macOS and required tools
+- checks for Ollama
+- supports guided mode by default when run interactively
+- supports `--non-interactive` for dry review
+- shows hardware-aware model recommendations by role
+- does not silently install Ollama or MemPalace
+- installs the NOMAD launcher at `/usr/local/bin/nomad`
+- keeps approval gates intact for bootstrap and model setup
+
+For SSH audits, keep real targets in `config/ssh_targets.local.json` and copy from `config/ssh_targets.local.json.example`.
+
+If Ollama is missing, install it manually from:
+
+```text
+https://ollama.com/download
+```
+
+Then start it with:
+
+```bash
+ollama serve
+```
+
+For a dry review run:
+
+```bash
+bash scripts/install-nomad.sh --non-interactive
+```
+
+## First Run
+
+The safe first-run flow is:
+
+1. install
+2. bootstrap plan
+3. approve `<run_id>`
+4. run resume `<run_id>`
+5. models recommend
+6. models plan-install `<model_id>`
+7. approve `<run_id>`
+8. run resume `<run_id>`
+
+## Model Setup
+
+Use these commands to inspect and prepare local models:
+
+```text
+models list
+models recommend
+models discover
+models plan-install <model_id>
+models update <model_id>
+approve <run_id>
+run resume <run_id>
+```
+
+Model actions are use-case aware, hardware aware, logged, and approval-gated.
+NOMAD is intended to support role-based local models, such as coding, planning, reasoning, audit, and memory/recall roles.
+
+## Approval Flow
+
+All write-capable work uses the same `run_id` from plan to approval to execution.
+
+```text
+plan -> approve <run_id> -> run resume <run_id>
+```
+
+If approval is missing, denied, or invalid, execution fails safe.
+
+## Memory System
+
+NOMAD-native memory is authoritative for orchestration state.
+
+```text
+memory status
+memory mode
+memory plan-install mempalace
+memory backend-test
+```
+
+MemPalace is optional. NOMAD still functions if it is absent.
+
+## Project Direction
+
+NOMAD is intended to be the local gatekeeper for projects and repositories:
+
+- create local workspace first
+- manage local repository lifecycle first
+- only push to GitHub under explicit approval
+- keep local-first execution and restore metadata as the default operating model
+
+## Restore / Cleanup
+
+Every write-capable path records restore metadata and a cleanup path.
+If install or update verification fails, NOMAD prints the exact cleanup path before stopping.
 
 ---
 
 ## Run
 
 ```bash
-jovocoder
+nomad
 ```
 
 ---
@@ -210,10 +278,10 @@ jovocoder
 
 ```bash
 echo '
-# auto-start jovocoder for interactive ssh
+# auto-start nomad for interactive ssh
 if [[ $- == *i* ]]; then
-  if command -v jovocoder >/dev/null 2>&1; then
-    jovocoder
+  if command -v nomad >/dev/null 2>&1; then
+    nomad
     exit
   fi
 fi
@@ -228,23 +296,12 @@ ssh -t user@host "bash --noprofile --norc"
 
 ---
 
-## Attribution
+## Packaging
 
-JovoCoder is designed to work with [MemPalace](https://github.com/mikelawson68/mempalace) as an upstream memory layer.
+Release builds include package metadata and can include a configurable logo asset.
 
-When MemPalace is available, JovoCoder can use it for grounded recall and lookup.
-When MemPalace is absent, JovoCoder still functions as a local execution and audit tool.
-
-MemPalace attribution should remain with its original authors and project materials.
-
----
+Set `NOMAD_LOGO_ASSET_PATH` at packaging time to include an external logo file in the release tarball.
 
 ## Status
 
-**v0.2.0 — Execution Engine Release**
-
-This version establishes JovoCoder as a practical local operator layer with:
-- validated execution
-- SSH audit support
-- natural-language routing
-- optional MemPalace-backed recall
+**v0.2.0 — Emergent Autonomous Infrastructure Orchestrator**

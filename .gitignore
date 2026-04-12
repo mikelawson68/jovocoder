@@ -2,3 +2,4 @@ bin/jovocoder.redline-*
 bin/jovocoder.pre-overwrite-*
 bin/jovocoder.speed-redline-*
 bin/jovocoder.redline-v0205-*
+config/ssh_targets.local.json

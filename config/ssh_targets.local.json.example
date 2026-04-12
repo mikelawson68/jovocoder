@@ -1,0 +1,12 @@
+{
+  "targets": {
+    "example-target": {
+      "host": "CHANGE_ME",
+      "user": "CHANGE_ME",
+      "port": 22,
+      "safe": true,
+      "environment": "local",
+      "notes": "Copy this file to config/ssh_targets.local.json and replace with real local targets"
+    }
+  }
+}

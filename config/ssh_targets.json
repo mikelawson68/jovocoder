@@ -1,20 +1,20 @@
 {
   "targets": {
-    "test.artistpro.media": {
-      "host": "artistpro.media",
-      "user": "apmedia",
+    "example-target": {
+      "host": "example-target.invalid",
+      "user": "exampleuser",
       "port": 22,
       "safe": true,
-      "environment": "test",
-      "notes": "Primary test environment for audits"
+      "environment": "example",
+      "notes": "Public example target for documentation"
     },
-    "artistprocodecritic-lan": {
-      "host": "192.168.1.52",
-      "user": "critic",
+    "example-test": {
+      "host": "example-test.invalid",
+      "user": "exampleuser",
       "port": 22,
       "safe": true,
-      "environment": "local",
-      "notes": "Local LAN access for JovoCoder development"
+      "environment": "example",
+      "notes": "Public example test target for documentation"
     }
   }
 }
