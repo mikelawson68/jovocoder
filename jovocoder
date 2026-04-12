@@ -127,7 +127,7 @@ run_remote_apache_php_audit() {
 
   echo "[done] apache/php audit sequence completed"; echo
   echo "AUDIT SUMMARY:"
-  echo "Target: test.artistpro.media"
+  echo "Target: example-target"
   echo "Host: ${host_out%%$'\n'*}"
   echo "Apache: ${apache_ver:-unknown}"
   echo "PHP: ${php_ver:-unknown}"
@@ -135,7 +135,7 @@ run_remote_apache_php_audit() {
 
   if [ "${http_status:-}" = "200" ] && [ -n "${apache_ver:-}" ] && [ -n "${php_ver:-}" ]; then
     echo "Status: PASS"
-    write_lesson "apache/php audit PASS on test.artistpro.media"
+    write_lesson "apache/php audit PASS on example-target"
   else
     echo "Status: REVIEW"
     # simple failure branching
@@ -186,8 +186,8 @@ exec_task() {
   # explain mode
   if echo "$task_lc" | grep -q '^explain '; then
     task_lc="${task_lc#explain }"
-    if echo "$task_lc" | grep -q "test.artistpro.media" && echo "$task_lc" | grep -q "apache" && echo "$task_lc" | grep -q "php"; then
-      resolved="$(resolve_safe_target "test.artistpro.media" 2>/dev/null || true)"
+    if echo "$task_lc" | grep -q "example-test" && echo "$task_lc" | grep -q "apache" && echo "$task_lc" | grep -q "php"; then
+      resolved="$(resolve_safe_target "example-test" 2>/dev/null || true)"
       [ -z "$resolved" ] && { echo "[validator] FAIL: target not configured safe"; echo; return 1; }
       explain_plan_apache_php "$resolved"
       return 0
@@ -205,10 +205,10 @@ exec_task() {
   fi
 
   # deterministic follow-up execution: cron, logs, files, history
-  if echo "$task_lc" | grep -q "artistpro.media" && \
+  if echo "$task_lc" | grep -q "example-target" && \
      echo "$task_lc" | grep -qE "cron|app|logs|files|history|24"; then
 
-    resolved="$(resolve_safe_target "artistpro" 2>/dev/null || true)"
+    resolved="$(resolve_safe_target "example-target" 2>/dev/null || true)"
     if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
       echo "[validator] FAIL: target not configured safe"; echo; return 1
     fi
@@ -216,12 +216,12 @@ exec_task() {
     echo "[exec-task] follow-up investigation (24h window)"; echo
 
     cron_cmd="ssh $resolved \"grep -i CRON /var/log/syslog 2>/dev/null | tail -n 80\""
-    files_cmd="ssh $resolved \"find /var/www/vhosts/artistpro.media -type f -mtime -1 2>/dev/null | head -n 50\""
-    hist_cmd="ssh $resolved \"tail -n 100 /home/apmedia/.bash_history 2>/dev/null\""
+    files_cmd="ssh $resolved \"find /srv/example -type f -mtime -1 2>/dev/null | head -n 50\""
+    hist_cmd="ssh $resolved \"tail -n 100 /home/exampleuser/.bash_history 2>/dev/null\""
 
         cron_out="$(ssh $resolved 'grep -i CRON /var/log/syslog 2>/dev/null | tail -n 80' 2>/dev/null || true)"
-    files_out="$(ssh $resolved 'find /var/www/vhosts/artistpro.media -type f -mtime -1 2>/dev/null | head -n 50' 2>/dev/null || true)"
-    hist_out="$(ssh $resolved 'tail -n 100 /home/apmedia/.bash_history 2>/dev/null' 2>/dev/null || true)"
+    files_out="$(ssh $resolved 'find /srv/example -type f -mtime -1 2>/dev/null | head -n 50' 2>/dev/null || true)"
+    hist_out="$(ssh $resolved 'tail -n 100 /home/exampleuser/.bash_history 2>/dev/null' 2>/dev/null || true)"
 
     for cmd in "$cron_cmd" "$files_cmd" "$hist_cmd"; do
       verdict="$(validator_check "$cmd" || true)"
@@ -255,7 +255,7 @@ exec_task() {
     echo
 
     echo "HOP 2 — RECENT FILE MODIFICATIONS"
-    echo "[ANALYST] Source: files under /var/www/vhosts/artistpro.media modified in the last 24 hours."
+    echo "[ANALYST] Source: files under /srv/example modified in the last 24 hours."
     if [ -z "$files_out" ]; then
       echo "[ANALYST] No recent file modifications were returned."
     else
@@ -266,7 +266,7 @@ exec_task() {
     echo
 
     echo "HOP 3 — SHELL HISTORY"
-    echo "[ANALYST] Source: /home/apmedia/.bash_history tail."
+    echo "[ANALYST] Source: /home/exampleuser/.bash_history tail."
     if [ -z "$hist_out" ]; then
       echo "[ANALYST] No shell history evidence was returned."
     else
@@ -308,10 +308,10 @@ exec_task() {
   fi
 
   # deterministic path for known audit
-  if echo "$task_lc" | grep -q "test.artistpro.media" && \
+  if echo "$task_lc" | grep -q "example-test" && \
      echo "$task_lc" | grep -q "apache" && \
      echo "$task_lc" | grep -q "php"; then
-    resolved="$(resolve_safe_target "test.artistpro.media" 2>/dev/null || true)"
+    resolved="$(resolve_safe_target "example-test" 2>/dev/null || true)"
     if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
       echo "[validator] FAIL: target not configured safe"; echo; return 1
     fi
@@ -319,10 +319,10 @@ exec_task() {
     return 0
   fi
 
-  if echo "$task_lc" | grep -q "artistpro.media" && \
+  if echo "$task_lc" | grep -q "example-target" && \
      echo "$task_lc" | grep -q "last night" && \
      echo "$task_lc" | grep -q "logs"; then
-    resolved="$(resolve_safe_target "artistpro" 2>/dev/null || true)"
+    resolved="$(resolve_safe_target "example-target" 2>/dev/null || true)"
     if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
       echo "[validator] FAIL: target not configured safe"; echo; return 1
     fi
@@ -330,16 +330,16 @@ exec_task() {
     echo "[exec-task] remote incident snapshot (time-window)"; echo
 
     journal_out="$(ssh $resolved \"journalctl --since 'today 01:20' --until 'today 02:00' --no-pager 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
-    access_out="$(ssh $resolved \"grep -E '\\[08/Apr/2026:01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/access_log 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
-    error_out="$(ssh $resolved \"grep -E '\\[Wed Apr 08 01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/error_log 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
+    access_out="$(ssh $resolved \"grep -E '\\[08/Apr/2026:01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /srv/example/logs/access_log 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
+    error_out="$(ssh $resolved \"grep -E '\\[Wed Apr 08 01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /srv/example/logs/error_log 2>/dev/null | tail -n 120\" 2>/dev/null || true)"
     last_out="$(ssh $resolved 'last -a | head -n 40' 2>/dev/null || true)"
 
     for cmd in \
       "ssh $resolved 'hostname'" \
       "ssh $resolved 'date'" \
       "ssh $resolved \"journalctl --since 'today 01:20' --until 'today 02:00' --no-pager 2>/dev/null | tail -n 120\"" \
-      "ssh $resolved \"grep -E '\\[08/Apr/2026:01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/access_log 2>/dev/null | tail -n 120\"" \
-      "ssh $resolved \"grep -E '\\[Wed Apr 08 01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /var/www/vhosts/artistpro.media/logs/error_log 2>/dev/null | tail -n 120\"" \
+      "ssh $resolved \"grep -E '\\[08/Apr/2026:01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /srv/example/logs/access_log 2>/dev/null | tail -n 120\"" \
+      "ssh $resolved \"grep -E '\\[Wed Apr 08 01:(2[0-9]|3[0-9]|4[0-9]|5[0-9])' /srv/example/logs/error_log 2>/dev/null | tail -n 120\"" \
       "ssh $resolved 'last -a | head -n 40'"
     do
       verdict="$(validator_check "$cmd" || true)"
@@ -462,20 +462,20 @@ route_nl_task() {
   local lower
   lower="$(printf "%s" "$task" | tr "[:upper:]" "[:lower:]")"
 
-  if echo "$lower" | grep -qiE "artistpro(\\.media)?"; then
-    if echo "$lower" | grep -qiE "what happened|last night|early morning|around [0-9]|logs?"; then
-      echo "/exec-task investigate artistpro.media last night logs"
+    if echo "$lower" | grep -qiE "example-target"; then
+      if echo "$lower" | grep -qiE "what happened|last night|early morning|around [0-9]|logs?"; then
+      echo "/exec-task investigate example-target last night logs"
       return 0
     fi
     if echo "$lower" | grep -qiE "ssh|audit|uptime|disk|df|hostname|php|apache|nginx|server"; then
-      echo "/ssh-audit artistpro"
+      echo "/ssh-audit example-target"
       return 0
     fi
   fi
 
-  if echo "$lower" | grep -qiE "test(\\.artistpro\\.media)?"; then
+  if echo "$lower" | grep -qiE "example-test"; then
     if echo "$lower" | grep -qiE "ssh|audit|uptime|disk|df|hostname|php|apache|nginx|server|logs?"; then
-      echo "/ssh-audit test"
+      echo "/ssh-audit example-test"
       return 0
     fi
   fi
@@ -483,7 +483,7 @@ route_nl_task() {
 
   # follow-up deterministic routing (cron, logs, files, history)
   if echo "$lower" | grep -qiE "cron|app|logs|file modification|file changes|shell history|history|past 24|24 hours|return and check"; then
-    echo "/exec-task investigate artistpro.media followup 24h"
+    echo "/exec-task investigate example-target followup 24h"
     return 0
   fi
 
