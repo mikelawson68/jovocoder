@@ -86,10 +86,9 @@ Possible output:
 
 ```text
 AUDIT SUMMARY:
-Target: EXAMPLE.SITE
-Host: dreamy-hermann...
-Web: apache
-Web Version: 2.4.52
+Target: example-target
+Host: dreamy-hermann
+Apache: 2.4.52
 PHP: 8.1.2
 HTTP: 200
 Status: PASS
@@ -239,7 +238,37 @@ If approval is missing, denied, or invalid, execution fails safe.
 
 ## Memory System
 
-NOMAD-native memory is authoritative for orchestration state.
+NOMAD uses a two-layer memory architecture:
+
+### Native File Store (always active)
+
+The native file store at `~/.jovocoder/memory/` is the authoritative source for all structured operational data:
+
+- **session/** — current session context
+- **operational/** — run logs, approvals, plans, install records
+- **knowledge/** — target configs, hardware profiles, model metadata
+- **reflections/** — lessons learned and operational patterns
+
+Lessons are also logged to `~/.mempalace/lessons.log`.
+
+### MemPalace Integration (optional)
+
+[MemPalace](https://github.com/mempalace/mempalace) provides semantic search across audit history when installed. NOMAD still functions fully without it — all core operations use the native file store.
+
+When MemPalace is available, NOMAD:
+
+- **Mines audit results** into a `jovocoder` wing after each audit or workflow completes, using `mempalace mine`
+- **Searches past results** using `mempalace search --wing jovocoder` for semantic retrieval across audit history
+- **Falls back silently** to native-only storage if MemPalace is not installed
+
+To install MemPalace:
+
+```bash
+pip install mempalace
+mempalace init <dir> --no-llm --yes
+```
+
+Memory commands:
 
 ```text
 memory status
@@ -248,7 +277,14 @@ memory plan-install mempalace
 memory backend-test
 ```
 
-MemPalace is optional. NOMAD still functions if it is absent.
+Backend modes (set via `NOMAD_MEMORY_BACKEND` env var):
+
+| Mode | Behavior |
+|---|---|
+| `fallback_to_native_if_mempalace_missing` | Default. Uses native store; syncs to MemPalace if available |
+| `native_only` | Native file store only, MemPalace ignored |
+| `hybrid` | Both native and MemPalace active |
+| `mempalace_only` | MemPalace required (fails if absent) |
 
 ## Project Direction
 
