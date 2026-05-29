@@ -13,6 +13,7 @@ CMD_OUTPUT_FILE="/tmp/jovocoder-cmd-output.txt"
 JOVOCODER_STATE_DIR="$HOME/.jovocoder"
 JOVOCODER_RUNS_DIR="$JOVOCODER_STATE_DIR/runs"
 JOVOCODER_LAST_RUN_FILE="$JOVOCODER_STATE_DIR/last_run"
+JOVOCODER_MEMPALACE_WING="jovocoder"
 JOVOCODER_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JOVOCODER_BIN_PATH="${JOVOCODER_BIN_PATH:-$(command -v jovocoder 2>/dev/null || printf '%s' "$JOVOCODER_SCRIPT_DIR/jovocoder")}"
 NOMAD_VOICE_FILE="$(cd "$JOVOCODER_SCRIPT_DIR/.." && pwd)/nomad_voice.sh"
@@ -299,25 +300,6 @@ memory_put() {
   path="$(memory_native_path "$namespace" "$key")"
   mkdir -p "$(dirname "$path")"
   printf '%s\n' "$value" > "$path"
-  case "$(memory_backend_mode)" in
-    native_only)
-      return 0
-      ;;
-    mempalace_only)
-      if memory_backend_available; then
-        mempalace put "$namespace" "$key" "$value" >/dev/null 2>&1 || return 1
-        return 0
-      fi
-      echo "[memory] FAIL: mempalace backend unavailable"
-      return 1
-      ;;
-    hybrid|fallback_to_native_if_mempalace_missing)
-      if memory_backend_available; then
-        mempalace put "$namespace" "$key" "$value" >/dev/null 2>&1 || true
-      fi
-      return 0
-      ;;
-  esac
 }
 
 memory_get() {
@@ -329,24 +311,7 @@ memory_get() {
     cat "$path"
     return 0
   fi
-  case "$(memory_backend_mode)" in
-    native_only)
-      return 1
-      ;;
-    mempalace_only)
-      if memory_backend_available; then
-        mempalace get "$namespace" "$key" 2>/dev/null || return 1
-        return 0
-      fi
-      echo "[memory] FAIL: mempalace backend unavailable"
-      return 1
-      ;;
-    hybrid|fallback_to_native_if_mempalace_missing)
-      if memory_backend_available; then
-        mempalace get "$namespace" "$key" 2>/dev/null || true
-      fi
-      ;;
-  esac
+  return 1
 }
 
 memory_append() {
@@ -356,31 +321,6 @@ memory_append() {
   path="$(memory_native_append_path "$namespace")"
   mkdir -p "$(dirname "$path")"
   printf '%s\n' "$value" >> "$path"
-  case "$(memory_backend_mode)" in
-    native_only)
-      return 0
-      ;;
-    mempalace_only)
-      if memory_backend_available; then
-        mempalace append "$namespace" "$value" >/dev/null 2>&1 || return 1
-        return 0
-      fi
-      echo "[memory] FAIL: mempalace backend unavailable"
-      return 1
-      ;;
-    hybrid)
-      if memory_backend_available; then
-        mempalace append "$namespace" "$value" >/dev/null 2>&1 || true
-      fi
-      return 0
-      ;;
-    fallback_to_native_if_mempalace_missing)
-      if memory_backend_available; then
-        mempalace append "$namespace" "$value" >/dev/null 2>&1 || true
-      fi
-      return 0
-      ;;
-  esac
 }
 
 memory_search() {
@@ -392,7 +332,7 @@ memory_search() {
     rg -n -i --no-messages "$query" "$dir" || true
   fi
   if memory_backend_available && [ "$(memory_backend_mode)" != "native_only" ]; then
-    mempalace search "$namespace" "$query" 2>/dev/null || true
+    mempalace search "$query" --wing "$JOVOCODER_MEMPALACE_WING" 2>/dev/null || true
   fi
 }
 
@@ -556,7 +496,7 @@ memory_show_record() {
     return 0
   fi
   if memory_backend_available && [ "$(memory_backend_mode)" != "native_only" ]; then
-    mempalace get "$namespace" "$key" 2>/dev/null || true
+    mempalace search "$key" --wing "$JOVOCODER_MEMPALACE_WING" --results 1 2>/dev/null || true
     return 0
   fi
   echo "unknown record"
@@ -595,6 +535,23 @@ memory_backend_test() {
       ;;
   esac
   echo "[memory-test] mempalace_adapter: $status"
+}
+
+memory_mine_to_mempalace() {
+  if ! memory_backend_available; then
+    return 0
+  fi
+  if [ "$(memory_backend_mode)" = "native_only" ]; then
+    return 0
+  fi
+  if [ ! -d "$NORMAD_MEMORY_DIR" ]; then
+    return 0
+  fi
+  echo "[memory] syncing native store to MemPalace (wing: $JOVOCODER_MEMPALACE_WING)"
+  mempalace mine "$NORMAD_MEMORY_DIR" --wing "$JOVOCODER_MEMPALACE_WING" --no-gitignore 2>/dev/null || true
+  if [ -d "$HOME/.mempalace" ] && [ -f "$LESSONS_FILE" ]; then
+    mempalace mine "$HOME/.mempalace" --wing "$JOVOCODER_MEMPALACE_WING" --no-gitignore 2>/dev/null || true
+  fi
 }
 
 model_catalog() {
@@ -1803,6 +1760,7 @@ workflow_smart_run() {
   echo "[workflow] overall_signal: $overall_signal"
   echo "[workflow] reason_for_stop: $reason_for_stop"
   echo "[workflow] run_record: $run_file"
+  memory_mine_to_mempalace
 }
 
 workflow_show() {
@@ -2168,6 +2126,7 @@ run_remote_apache_php_audit() {
     fi
   fi
   echo
+  memory_mine_to_mempalace
 }
 
 # --- Explain mode ---
@@ -2220,6 +2179,19 @@ exec_task() {
       run_remote_apache_php_audit "$resolved" "$alias"
     done
     return 0
+  fi
+
+  # single-target apache/php audit
+  if echo "$task_lc" | grep -q "apache" && echo "$task_lc" | grep -q "php" && ! echo "$task_lc" | grep -q "all"; then
+    local audit_target
+    audit_target="$(printf '%s\n' "$task_lc" | grep -oE '(example-target|[a-z0-9][-a-z0-9]+)' | tail -n 1)"
+    [ -z "$audit_target" ] && audit_target="example-target"
+    resolved="$(resolve_safe_target "$audit_target" 2>/dev/null || true)"
+    if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
+      echo "[validator] FAIL: target not configured safe"; echo; return 1
+    fi
+    run_remote_apache_php_audit "$resolved" "$audit_target"
+    return $?
   fi
 
   # deterministic follow-up execution: cron, logs, files, history
@@ -2429,69 +2401,46 @@ fi
 
 mempalace_query() {
   local q="$1"
-  local wing="$2"
-
-  echo "[mempalace] query: $q"
-  echo "[mempalace] wing: $wing"
-  echo
-
-  out="$(mempalace search "$q" --wing "$wing" 2>/dev/null)"
-
-  if echo "$out" | grep -q "Results for"; then
-    echo "$out"
-    return 0
-  fi
-
-  return 1
-}
-
-
-mempalace_query() {
-  local q="$1"
-  local canon_out artist_out best_match combined_out body_out overlap_found
+  local jovocoder_out canon_out combined_out best_match body_out overlap_found
   local token
 
+  if ! memory_backend_available; then
+    return 1
+  fi
+
   echo "[mempalace] query: $q"
   echo
 
+  jovocoder_out="$(mempalace search "$q" --wing "$JOVOCODER_MEMPALACE_WING" 2>/dev/null)"
   canon_out="$(mempalace search "$q" --wing mempalace_canon 2>/dev/null)"
-  artist_out="$(mempalace search "$q" --wing example-target 2>/dev/null)"
 
   combined_out="$(
     {
-      printf '%s
-' "$canon_out"
-      printf '%s
-' "$artist_out"
+      printf '%s\n' "$jovocoder_out"
+      printf '%s\n' "$canon_out"
     }
   )"
 
   best_match="$(
-    printf '%s
-' "$combined_out" | awk '/Match:/ {print $2}' | sort -n | tail -1
+    printf '%s\n' "$combined_out" | awk '/Match:/ {print $2}' | sort -n | tail -1
   )"
 
   body_out="$(
-    printf '%s
-' "$combined_out" | grep -v '^  Results for: '
+    printf '%s\n' "$combined_out" | grep -v '^  Results for: '
   )"
 
   overlap_found=1
-  for token in $(printf '%s
-' "$q" | tr '[:upper:]' '[:lower:]' | grep -oE '[a-z0-9._-]+' | awk 'length($0) >= 4'); do
-    if printf '%s
-' "$body_out" | tr '[:upper:]' '[:lower:]' | grep -Fqi -- "$token"; then
+  for token in $(printf '%s\n' "$q" | tr '[:upper:]' '[:lower:]' | grep -oE '[a-z0-9._-]+' | awk 'length($0) >= 4'); do
+    if printf '%s\n' "$body_out" | tr '[:upper:]' '[:lower:]' | grep -Fqi -- "$token"; then
       overlap_found=0
       break
     fi
   done
 
   if [ -n "$best_match" ] && awk -v m="$best_match" 'BEGIN { exit !(m > -0.65) }' && [ "$overlap_found" -eq 0 ]; then
-    printf '%s
-' "$canon_out"
+    printf '%s\n' "$jovocoder_out"
     echo
-    printf '%s
-' "$artist_out"
+    printf '%s\n' "$canon_out"
     return 0
   fi
 
