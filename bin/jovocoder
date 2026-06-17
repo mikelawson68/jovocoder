@@ -96,8 +96,8 @@ is_safe_command() {
 }
 
 ssh_command_allowed() {
-  local cmd="$1" token target
-  token="$(printf "%s\n" "$cmd" | awk '{
+  local cmd="$1" target_arg target
+  target_arg="$(printf "%s\n" "$cmd" | awk '{
     for (i = 2; i <= NF; i++) {
       if ($i ~ /^-/) {
         continue
@@ -106,8 +106,8 @@ ssh_command_allowed() {
       exit
     }
   }')"
-  [ -z "$token" ] && return 1
-  target="${token#*@}"
+  [ -z "$target_arg" ] && return 1
+  target="${target_arg#*@}"
   resolve_safe_target "$target" >/dev/null 2>&1
 }
 
