@@ -2222,6 +2222,19 @@ exec_task() {
     return 0
   fi
 
+  # single-target apache/php audit
+  if echo "$task_lc" | grep -q "apache" && echo "$task_lc" | grep -q "php" && ! echo "$task_lc" | grep -q "all"; then
+    local audit_target
+    audit_target="$(printf '%s\n' "$task_lc" | grep -oE '(example-target|[a-z0-9][-a-z0-9]+)' | tail -n 1)"
+    [ -z "$audit_target" ] && audit_target="example-target"
+    resolved="$(resolve_safe_target "$audit_target" 2>/dev/null || true)"
+    if [ -z "$resolved" ] || [ "$resolved" = "NOT_FOUND" ] || [ "$resolved" = "UNSAFE" ] || [ "$resolved" = "NO_CONFIG" ]; then
+      echo "[validator] FAIL: target not configured safe"; echo; return 1
+    fi
+    run_remote_apache_php_audit "$resolved" "$audit_target"
+    return $?
+  fi
+
   # deterministic follow-up execution: cron, logs, files, history
   if echo "$task_lc" | grep -qE "(^|[^[:alnum:]_])(example-target|prod|production|live)([^[:alnum:]_]|$)" && \
      echo "$task_lc" | grep -qE "cron|app|logs|files|history|24|last night"; then
