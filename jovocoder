@@ -54,10 +54,10 @@ is_safe_command() {
 }
 
 ssh_command_allowed() {
-  local cmd="$1" token target
-  token="$(echo "$cmd" | sed -nE "s/^ssh[[:space:]]+([^[:space:]]+).*/\1/p")"
-  [ -z "$token" ] && return 1
-  target="${token#*@}"
+  local cmd="$1" target_arg target
+  target_arg="$(echo "$cmd" | sed -nE "s/^ssh[[:space:]]+([^[:space:]]+).*/\1/p")"
+  [ -z "$target_arg" ] && return 1
+  target="${target_arg#*@}"
   resolve_safe_target "$target" >/dev/null 2>&1
 }
 

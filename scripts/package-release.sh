@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/home/critic/jovocoder"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VER="$(cat "$ROOT/VERSION")"
 OUT="$ROOT/release/jovocoder-$VER.tar.gz"
 
