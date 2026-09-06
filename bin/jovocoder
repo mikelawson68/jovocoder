@@ -452,7 +452,7 @@ exec_task() {
 }
 
 echo " //> JovoCoder"
-echo " built on top of MemPalace"
+echo " validated local and SSH task runner"
 echo " type 'exit' to quit"
 echo " commands: /exec /audit /ssh-audit /exec-task"
 echo

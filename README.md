@@ -2,214 +2,80 @@
   <img src="docs/jovocoder-source.png" alt="JovoCoder Logo" width="300"/>
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/version-0.2.0-blue?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/local--first-yes-brightgreen?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/no%20api-required-blueviolet?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/execution-engine-orange?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" />
-</p>
-
 # JovoCoder
 
-JovoCoder is a local-first command runner and task router for grounded, read-safe infrastructure work.
+JovoCoder is a shell-based command runner for local checks and SSH audits. It validates commands against a small safety policy before running them and prints the resulting command output.
 
-It can sit on top of MemPalace when a memory layer is available, but it can still run its core execution and audit paths without MemPalace.
+This repository contains JovoCoder. It is not the Nomad project.
 
----
+## Current Scope
 
-## What JovoCoder Is
-
-JovoCoder is not just a chat interface.
-
-It is a shell-driven operator layer that takes input, routes it, validates it, and then either:
-
-- executes a safe command
-- runs a predefined audit path
-- performs a task-oriented execution loop
-- or uses MemPalace for grounded recall when that memory layer is available
-
-In practice, it is a controlled interface for local and remote operational work.
-
----
-
-## What “Built on Top of MemPalace” Means
-
-MemPalace is the memory and retrieval layer.
-
-When MemPalace is present, JovoCoder can use it to:
-- recall grounded notes and system context
-- answer memory-style queries
-- route some natural-language prompts into evidence-backed lookups
-
-JovoCoder does **not** require MemPalace for its core execution paths.
-
-Its execution features such as:
-- `/exec`
-- `/audit`
-- `/ssh-audit`
-- `/exec-task`
-
-can still function independently, as long as the local runtime, shell environment, SSH configuration, and target definitions are in place.
-
-So the relationship is:
-
-- **MemPalace** = optional memory and retrieval layer
-- **JovoCoder** = routing, validation, execution, and audit layer
-- **Ollama** = optional local model runtime used for interpretation or task assistance where configured
-
----
-
-## Tested Compatibility
-
-| JovoCoder | MemPalace | Tested | Result |
-| --- | --- | --- | --- |
-| 0.2.0 (`8c92821`) | [3.9.0](https://github.com/MemPalace/mempalace/releases/tag/v3.9.0) | September 6, 2026 | Passed |
-
-MemPalace 3.9.0 was the latest release at the time of validation. The test used JovoCoder's guarded `/exec` path to run both `mempalace --version` and a live `mempalace search ... --wing ...` query. Command validation passed, MemPalace reported version 3.9.0, and hybrid search returned cosine-similarity and BM25 results.
-
-JovoCoder 0.2.0 does not embed or import the MemPalace API directly. MemPalace remains an optional external memory layer, so its absence does not disable JovoCoder's core command-routing and audit paths.
-
-### Upgrading an Older Palace
-
-During validation of a legacy MemPalace 3.0.0 palace against 3.9.0, MemPalace detected an HNSW/SQLite divergence and safely fell back to BM25-only search. The archive-first recovery recommended by MemPalace restored vector search:
-
-```bash
-mempalace repair --mode from-sqlite --archive-existing --yes
-```
-
-Run `mempalace repair-status` after upgrading an older palace. A large palace may require a lengthy rebuild; preserve the archived original until post-upgrade searches are verified.
-
----
-
-## How It Can Run Without MemPalace
-
-If MemPalace is unavailable, JovoCoder can still operate as an execution tool.
-
-That includes:
-- running direct commands
-- performing local audits
-- executing SSH-based checks against configured safe targets
-- handling task flows that resolve to deterministic execution paths
-
-What you lose without MemPalace is the memory-backed recall layer, not the operator layer.
-
-In other words:
-
-- without MemPalace, JovoCoder is still a useful execution and audit tool
-- with MemPalace, it gains grounded recall and evidence-aware lookup behavior
-
----
-
-## What It Does
-
-- Executes local commands through a validated path
-- Runs SSH-based audits against configured targets
-- Routes some natural-language prompts into audit or task commands
-- Validates commands before execution
-- Detects real system state such as host, uptime, disk, and web stack details
-- Produces verifiable command output
-- Stays local-first and shell-driven
-
----
-
-## What It Does Not Try to Be
-
-JovoCoder is not a general autonomous agent that should improvise across unknown systems.
-
-It is designed for:
-- controlled execution
-- predictable routing
-- grounded operational work
-- safe read-focused infrastructure checks
-
-The goal is not “maximum autonomy.”
-The goal is useful automation without losing control.
-
----
-
-## Execution Model
-
-The basic flow is:
-
-`input → route → validate → execute → inspect output`
-
-Depending on configuration, a prompt may go through one of three paths:
-
-1. **Direct command path**  
-   Explicit commands such as `/exec` or `/audit`
-
-2. **Task path**  
-   Structured task execution through `/exec-task`
-
-3. **Memory path**
-   Grounded lookup through MemPalace, when available
-
-This separation matters because it keeps memory, routing, and execution from collapsing into one opaque step.
-
----
-
-## Example
-
-```text
-/exec-task audit example-target for apache and php health
-```
-
-Possible output:
-
-```text
-AUDIT SUMMARY:
-Target: EXAMPLE.SITE
-Host: dreamy-hermann...
-Web: apache
-Web Version: 2.4.52
-PHP: 8.1.2
-HTTP: 200
-Status: PASS
-```
-
----
-
-## Core Commands
+JovoCoder provides four command paths:
 
 ```text
 /exec <command>
 /audit
 /ssh-audit <target>
 /exec-task <task>
-/exec-task explain <task>
 ```
 
----
+- `/exec` runs a command only when it passes the built-in validator.
+- `/audit` runs a fixed local system audit.
+- `/ssh-audit` runs a fixed read-only audit against a configured safe target.
+- `/exec-task` handles the task patterns implemented in the script.
 
-## Features
+Some plain-language input is mapped to those commands. Input that does not match a deterministic route is sent to the configured Ollama model for a text response.
 
-- Local-first operation
-- No API requirement for core shell and audit behavior
-- Read-safe command validation
-- SSH automation using configured safe targets
-- Natural-language routing for certain audit/task prompts
-- Web stack detection for remote audits
-- Optional memory-backed recall through MemPalace
-- Optional local-model support through Ollama
+## Requirements
 
----
+- Bash
+- Python 3
+- Ollama
+- An Ollama service available to run `gemma3:4b` for unmatched plain-language input
+- SSH for remote audits
 
-## Safety Model
+Ollama is currently required at startup. MemPalace is not required.
 
-JovoCoder is designed around constrained execution.
+## MemPalace
 
-Principles:
-- one step at a time
-- validate before execution
-- prefer read-only paths
-- avoid destructive operations
-- do not invent results
-- surface real command output
+JovoCoder does not import the MemPalace API or automatically search a palace. Its current script retains legacy history and state files under `~/.mempalace`, but that directory use is not a native MemPalace integration.
 
-It is meant to reduce operational guesswork, not hide it.
+MemPalace commands can be run through JovoCoder's validated `/exec` path when MemPalace is installed, just like other allowed shell commands. For example:
 
----
+```text
+/exec mempalace --version
+/exec mempalace search "release process" --wing example
+```
+
+### Tested Compatibility
+
+| JovoCoder | MemPalace | Tested | Result |
+| --- | --- | --- | --- |
+| 0.2.0 (`8c92821`) | [3.9.0](https://github.com/MemPalace/mempalace/releases/tag/v3.9.0) | September 6, 2026 | Passed through `/exec` |
+
+The test ran `mempalace --version` and a live wing-filtered search through JovoCoder's validator. MemPalace reported version 3.9.0 and returned hybrid cosine-similarity and BM25 search results.
+
+This confirms command-level compatibility. It does not imply a native JovoCoder-to-MemPalace API integration.
+
+When upgrading an older palace, run:
+
+```bash
+mempalace repair-status
+```
+
+The tested MemPalace 3.0.0 to 3.9.0 upgrade required the archive-first repair recommended by MemPalace:
+
+```bash
+mempalace repair --mode from-sqlite --archive-existing --yes
+```
+
+Preserve the archived palace until post-upgrade searches are verified.
+
+## SSH Targets
+
+The current executable reads SSH targets from `~/jovocoder/config/ssh_targets.json`. The repository file contains non-routable examples; replace those placeholders in your local checkout before using remote audits, and do not commit real host details.
+
+Only targets marked `"safe": true` are accepted by the SSH command paths.
 
 ## Install
 
@@ -218,55 +84,22 @@ bash scripts/install.sh
 bash scripts/verify.sh
 ```
 
----
+The installer places `jovocoder` in `~/bin` and creates its legacy state files under `~/.mempalace`.
 
-## Run
+Run it with:
 
 ```bash
 jovocoder
 ```
 
----
+If `~/bin` is not in your `PATH`, run `~/bin/jovocoder` or add that directory to your shell configuration.
 
-## Optional: Auto-Launch on SSH Login
+## Safety Boundaries
 
-```bash
-echo '
-# auto-start jovocoder for interactive ssh
-if [[ $- == *i* ]]; then
-  if command -v jovocoder >/dev/null 2>&1; then
-    jovocoder
-    exit
-  fi
-fi
-' >> ~/.bashrc
-```
+JovoCoder uses pattern-based validation. It blocks several destructive or write-capable command forms and restricts SSH commands to configured safe targets.
 
-To bypass auto-launch:
+This is a guardrail, not a security sandbox. Review the script and target configuration before using it on systems that matter.
 
-```bash
-ssh -t user@host "bash --noprofile --norc"
-```
+## Version
 
----
-
-## Attribution
-
-JovoCoder is designed to work with [MemPalace](https://github.com/mikelawson68/mempalace) as an upstream memory layer.
-
-When MemPalace is available, JovoCoder can use it for grounded recall and lookup.
-When MemPalace is absent, JovoCoder still functions as a local execution and audit tool.
-
-MemPalace attribution should remain with its original authors and project materials.
-
----
-
-## Status
-
-**v0.2.0 — Execution Engine Release**
-
-This version establishes JovoCoder as a practical local operator layer with:
-- validated execution
-- SSH audit support
-- natural-language routing
-- optional MemPalace-backed recall
+Current version: `0.2.0`
