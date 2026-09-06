@@ -60,6 +60,28 @@ So the relationship is:
 
 ---
 
+## Tested Compatibility
+
+| JovoCoder | MemPalace | Tested | Result |
+| --- | --- | --- | --- |
+| 0.2.0 (`8c92821`) | [3.9.0](https://github.com/MemPalace/mempalace/releases/tag/v3.9.0) | September 6, 2026 | Passed |
+
+MemPalace 3.9.0 was the latest release at the time of validation. The test used JovoCoder's guarded `/exec` path to run both `mempalace --version` and a live `mempalace search ... --wing ...` query. Command validation passed, MemPalace reported version 3.9.0, and hybrid search returned cosine-similarity and BM25 results.
+
+JovoCoder 0.2.0 does not embed or import the MemPalace API directly. MemPalace remains an optional external memory layer, so its absence does not disable JovoCoder's core command-routing and audit paths.
+
+### Upgrading an Older Palace
+
+During validation of a legacy MemPalace 3.0.0 palace against 3.9.0, MemPalace detected an HNSW/SQLite divergence and safely fell back to BM25-only search. The archive-first recovery recommended by MemPalace restored vector search:
+
+```bash
+mempalace repair --mode from-sqlite --archive-existing --yes
+```
+
+Run `mempalace repair-status` after upgrading an older palace. A large palace may require a lengthy rebuild; preserve the archived original until post-upgrade searches are verified.
+
+---
+
 ## How It Can Run Without MemPalace
 
 If MemPalace is unavailable, JovoCoder can still operate as an execution tool.
